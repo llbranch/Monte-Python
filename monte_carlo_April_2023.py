@@ -277,11 +277,14 @@ times, points, photons = particle_path(t=0, phi_range_deg=40, T1_z=T1z, T1_width
                                        photons_per_E=10, prob_scint=0.8)
 N = np.sum(photons)
 print("Photons generated", N)
+
+# SIMULATE EACH PHOTON PATH IN BOTH SCINTILLATORS
 T1_input_times = []
 T4_input_times = []
 pmt_hits = 0
 with tqdm(total=N, file=sys.stdout) as pbar:
     for i,(point_i,time_i) in enumerate(zip(points,times)):
+        # IF IN T1
         if point_i[2] >= T1z:
             for photon in range(photons[i].astype(int)):
                 hit_PMT, travel_time, check = scintillator_monte_carlo(point_i, notabsorbed=True, scint_radius=T1_radius, 
@@ -295,6 +298,7 @@ with tqdm(total=N, file=sys.stdout) as pbar:
                 pbar.set_description(f'hits: {pmt_hits}')
                 pbar.update(1)
         else:
+        # ELSE IN T4
             for photon in range(photons[i].astype(int)):
                 hit_PMT, travel_time, _ = scintillator_monte_carlo(point_i, notabsorbed=True, scint_radius=T4_radius, 
                                                   scint_plane=np.array([T4z,T4z+1]), scint_width=1, 
@@ -306,10 +310,11 @@ with tqdm(total=N, file=sys.stdout) as pbar:
                     pmt_hits +=1
                 pbar.set_description(f'hits: {pmt_hits}')
                 pbar.update(1)
+# PRINT RESULTS
 print("HITS on T1",len(T1_input_times),"\n",T1_input_times)
 print("HITS on T4",len(T4_input_times),"\n",T4_input_times)
 
-
+# BEGIN SIMULATING PMT PULSE
 pmt_electron_travel_time = 16000 # approx 16 ns
 signals = []
 output_times = []
@@ -323,9 +328,10 @@ for i,t in enumerate(T4_input_times):
     output_times.append(pmt_electron_travel_time+t)
     signals.append(pmtSignal_i)
 
-# Electron count to Current
+# CONVERTION Electron count to Current
 signals *= q / t_rise 
 
+# OUTPUT FORMATTING
 print("OUTPUT TIMES", output_times)
 print("SIGNALS", signals)
 print("Exporing...", end='')
