@@ -6,22 +6,15 @@
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from mpl_toolkits import mplot3d
-from mpl_toolkits.mplot3d import Axes3D
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import sys
 from tqdm import tqdm
-from time import sleep
-import math
-import scipy
 import random
  
 #############################
 # CONSTANTS
 #############################
 c = 0.0299792 # Speed of Light in cm / ps
-q = 1.60217663e-19 # charge of electron columbs
+q = -1.60217663e-19 # charge of electron columbs
 t_rise = 800 #ps 
 T3z=0 #cm is the bottom of T3
 T1z=33.782 #cm is the bottom of T1
@@ -45,7 +38,15 @@ n_incident_photons = 10000 # remove
 E_per_electron = 20
 Nmax = 100000 # remove
 QE = 0.23
-
+t_initial = 0 #ps
+particle_init_angle_range = 40 #degrees
+T1_width = 0.5 #cm
+T4_width = 1 #cm
+mean_free_path_scints = 0.00024 #0.00024 #cm
+photons_produced_per_MeV = 10 # electrons
+pr_of_scintillation = 0.8 
+max_simulated_reflections = 8
+pmt_electron_travel_time = 0 # approx 16 ns
 #############################
 # HELPER FUNCTIONS
 #############################
@@ -272,9 +273,9 @@ def photontoElectrons(photons, V, QE, N, E_per_electron):
 #############################
 
 # FIND PARTICLE PATH
-times, points, photons = particle_path(t=0, phi_range_deg=40, T1_z=T1z, T1_width=0.5, 
-                                       T4_z=T4z, T4_width=1, T1_radius=13, T4_radius=18, mean_free_path=0.00024, 
-                                       photons_per_E=10, prob_scint=0.8)
+times, points, photons = particle_path(t=t_initial, phi_range_deg=particle_init_angle_range, T1_z=T1z, T1_width=T1_width, 
+                                       T4_z=T4z, T4_width=T4_width, T1_radius=T1_radius, T4_radius=T4_radius, mean_free_path=mean_free_path_scints, 
+                                       photons_per_E=photons_produced_per_MeV, prob_scint=pr_of_scintillation)
 N = np.sum(photons)
 print("Photons generated", N)
 
@@ -288,10 +289,10 @@ with tqdm(total=N, file=sys.stdout) as pbar:
         if point_i[2] >= T1z:
             for photon in range(photons[i].astype(int)):
                 hit_PMT, travel_time, check = scintillator_monte_carlo(point_i, notabsorbed=True, scint_radius=T1_radius, 
-                                                  scint_plane=np.array([T1z,T1z+0.5]), scint_width=0.5, 
+                                                  scint_plane=np.array([T1z,T1z+T1_width]), scint_width=T1_width, 
                                                   light_guide_planes=[T1_radius,-T1_radius], 
                                                   pmt_center=[T1_radius-4*0.5,-T1_radius+4*0.5,T1z], pmt_radius=PMT1_radius,
-                                                  N_max=8, dt=time_i)
+                                                  N_max=max_simulated_reflections, dt=time_i)
                 if hit_PMT: 
                     T1_input_times.append(travel_time)
                     pmt_hits +=1
@@ -301,10 +302,10 @@ with tqdm(total=N, file=sys.stdout) as pbar:
         # ELSE IN T4
             for photon in range(photons[i].astype(int)):
                 hit_PMT, travel_time, _ = scintillator_monte_carlo(point_i, notabsorbed=True, scint_radius=T4_radius, 
-                                                  scint_plane=np.array([T4z,T4z+1]), scint_width=1, 
+                                                  scint_plane=np.array([T4z,T4z+T4_width]), scint_width=T4_width, 
                                                   light_guide_planes=[T4_radius,-T4_radius], 
                                                   pmt_center=[T4_radius-4*0.5,-T4_radius+4*0.5,T4z], pmt_radius=PMT4_radius,
-                                                  N_max=8, dt=time_i)
+                                                  N_max=max_simulated_reflections, dt=time_i)
                 if hit_PMT: 
                     T4_input_times.append(travel_time)
                     pmt_hits +=1
@@ -315,7 +316,6 @@ print("HITS on T1",len(T1_input_times),"\n",T1_input_times)
 print("HITS on T4",len(T4_input_times),"\n",T4_input_times)
 
 # BEGIN SIMULATING PMT PULSE
-pmt_electron_travel_time = 16000 # approx 16 ns
 signals = []
 output_times = []
 QE = 1 # for testing purposes
@@ -329,11 +329,14 @@ for i,t in enumerate(T4_input_times):
     signals.append(pmtSignal_i)
 
 # CONVERTION Electron count to Current
-signals *= q / t_rise 
-
+signals = np.array(signals) * q / 1e-12 # divided by 1ps 
+output_times = np.array(output_times) / 1e12 # divided by 1*10^12ps per 1 second
 # OUTPUT FORMATTING
-print("OUTPUT TIMES", output_times)
-print("SIGNALS", signals)
+# print("OUTPUT TIMES", output_times)
+# print("SIGNALS", signals)
 print("Exporing...", end='')
-pd.DataFrame(rows=[output_times,signals], columns=['time','current']).to_csv('monte_carlo_output.txt')
+df = pd.DataFrame({'time':output_times,
+                   'current':signals}).sort_values(by=['time'])
+df.to_csv('monte_carlo_output.txt', float_format='%.12f', header=False, index=False, sep=' ')
 print("Done!")
+print(df)

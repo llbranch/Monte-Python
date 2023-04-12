@@ -9,8 +9,6 @@
 //////////////////////////////////
 
 #include <math.h>
-#include <vector>
-using namespace std;
 // #define pi 3.141592654
 inline double radians(double radians) {
     return radians * (180.0 / M_PI);
