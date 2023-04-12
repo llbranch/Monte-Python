@@ -41,9 +41,9 @@ yPMT4=9.5*np.sin(110)*2.54
 n_dynodes = 8
 V = np.linspace(150,850,n_dynodes)
 # V = [150,300,350,600,750,850]
-n_incident_photons = 10000
+n_incident_photons = 10000 # remove
 E_per_electron = 20
-Nmax = 100000
+Nmax = 100000 # remove
 QE = 0.23
 
 #############################
