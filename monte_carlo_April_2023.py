@@ -14,7 +14,7 @@ import random
 # CONSTANTS
 #############################
 c = 0.0299792 # Speed of Light in cm / ps
-q = -1.60217663e-19 # charge of electron columbs
+q = 1.60217663e-19 # charge of electron columbs
 t_rise = 800 #ps 
 T3z=0 #cm is the bottom of T3
 T1z=33.782 #cm is the bottom of T1
@@ -42,7 +42,7 @@ t_initial = 0 #ps
 particle_init_angle_range = 40 #degrees
 T1_width = 0.5 #cm
 T4_width = 1 #cm
-mean_free_path_scints = 0.00024 #0.00024 #cm
+mean_free_path_scints = 0.00024 #cm
 photons_produced_per_MeV = 10 # electrons
 pr_of_scintillation = 0.8 
 max_simulated_reflections = 8
@@ -316,27 +316,39 @@ print("HITS on T1",len(T1_input_times),"\n",T1_input_times)
 print("HITS on T4",len(T4_input_times),"\n",T4_input_times)
 
 # BEGIN SIMULATING PMT PULSE
+signals_channelT1 = []
+signals_channelT4 = []
+output_times_channelT1 = []
+output_times_channelT4 = []
 signals = []
 output_times = []
 QE = 1 # for testing purposes
 for i,t in enumerate(T1_input_times):
     pmtSignal_i = photontoElectrons(1, V, QE, n_dynodes, E_per_electron)
     output_times.append(pmt_electron_travel_time+t)
+    output_times_channelT1.append(pmt_electron_travel_time+t)
     signals.append(pmtSignal_i)
+    signals_channelT1.append(pmtSignal_i)
 for i,t in enumerate(T4_input_times):
     pmtSignal_i = photontoElectrons(1, V, QE, n_dynodes, E_per_electron)
     output_times.append(pmt_electron_travel_time+t)
+    output_times_channelT4.append(pmt_electron_travel_time+t)
     signals.append(pmtSignal_i)
+    signals_channelT4.append(pmtSignal_i)
 
 # CONVERTION Electron count to Current
 signals = np.array(signals) * q / 1e-12 # divided by 1ps 
-output_times = np.array(output_times) / 1e12 # divided by 1*10^12ps per 1 second
+output_times = np.array(output_times)
 # OUTPUT FORMATTING
-# print("OUTPUT TIMES", output_times)
-# print("SIGNALS", signals)
 print("Exporing...", end='')
-df = pd.DataFrame({'time':output_times,
-                   'current':signals}).sort_values(by=['time'])
-df.to_csv('monte_carlo_output.txt', float_format='%.12f', header=False, index=False, sep=' ')
+fill_data = np.zeros((int(max(output_times)//0.5)+2, 2))
+print(len(fill_data), len(np.arange(0,max(output_times),0.5)))
+fill_data[:,0] = np.arange(0,max(output_times)+0.5,0.5)
+df = pd.DataFrame(fill_data, columns=['time','current'])
+df = df.append(pd.DataFrame({'time':output_times,'current':signals}), ignore_index=True).sort_values(by=['time'])
+df['time'] = df['time']/1e12
+dfch1 = df[df['time'] <= max(output_times_channelT1)]
+dfch4 = df[df['time'] > max(output_times_channelT4)]
+df.to_csv('monte_carlo_output.txt', float_format='%.13f', header=False, index=False, sep=' ')
 print("Done!")
 print(df)
