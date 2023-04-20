@@ -1,4 +1,1 @@
-.ipynb_checkpoints/
-*pyproject.toml
 *.venv/
-*poetry.lock
