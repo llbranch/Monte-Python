@@ -1,5 +1,8 @@
 {
     "files.associations": {
-        "monte_carlo_April_2023.C": "cpp"
+        "monte_carlo_April_2023.C": "cpp",
+        "complex": "c",
+        "cmath": "c",
+        "chrono": "c"
     }
 }

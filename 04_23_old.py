@@ -15,6 +15,9 @@ import random
 #############################
 c = 0.0299792 # Speed of Light in cm / ps
 q = 1.60217663e-19 # charge of electron columbs
+# CONSTRAINT n_1 <= n_2
+n_1 = 1.000293 # Sample index of refraction of air
+n_2 = 1.85 # 1.85 for NaI
 t_rise = 800 #ps 
 T3z=0 #cm is the bottom of T3
 T1z=33.782 #cm is the bottom of T1
@@ -132,9 +135,6 @@ def distance_solver(u, o, center, radius, plane_z, corner_center, corner_radius,
 def photon_interaction(o, u, n, notabsorbed, scint_plane):
     u_i = u
     u_r = u - 2*np.dot(u, n)*n                      # u_new = u - 2 (u . n)*n
-                                                    # CONSTRAINT n_1 <= n_2
-    n_1 = 1.000293                                  # Sample index of refraction of air
-    n_2 = 1.85                                      # 1.85 for NaI
     v = u*-1 if np.dot(u,n) < 0 else u
     theta = np.arcsin(mag(np.cross(v,n))/(mag(u)*mag(n)))
     inside_sqrt = ((n_1/n_2)*np.sin(theta))**2
