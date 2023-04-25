@@ -1,64 +1,74 @@
 //////////////////////////////////
-// AESOPE-Lite Monte Carlo
+// AESOP-Lite Monte Carlo
+// AESOP_0423_script.c
 // Created by Liam Branch and Robert Johnson
 // Copyright UCSC 2023
 //////////////////////////////////
 
 //////////////////////////////////
-// IMPORTS
+// IMPORTS & DEFINITIONS
 //////////////////////////////////
 
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
-#define pi 3.141592654
+// #include <AESOP_0423_script.h>
+#define pi (double)(3.141592654)
+
+//////////////////////////////////
+// STRUCTS
+//////////////////////////////////
+
+typedef struct vector {
+    double d[3];
+}vector;
+
 
 //////////////////////////////////
 // HELPER FUNCTIONS
 //////////////////////////////////
 
+
 double radians(double radians) {
-    return radians * (180.0 / M_PI);
+    return radians * (180.0 / pi);
 }
 
 // Normalize a double array of size 3
 // Returns: double array
-double* normalize(double* p) {
-    double result[3];
+void normalize(double p[]) {
     double w = sqrt(p[0]*p[0]+p[1]*p[1]+p[2]*p[2]);
-    result[0] = p[0] / w; 
-    result[1] = p[1] / w;
-    result[2] = p[2] / w;
-    return p;
+    p[0] /= w; 
+    p[1] /= w;
+    p[2] /= w;
 }
 // Redefine norm for readability
 // Returns: double scalar
-double mag(double* p) {
-    return sqrt(p[0]*p[0]+p[1]*p[1]+p[2]*p[2]);
+double mag(vector p) {
+    return sqrt(p.d[0]*p.d[0]+p.d[1]*p.d[1]+p.d[2]*p.d[2]);
 }
 
 // Find significant digit power of 10
 double round_to_sig(double x) {
-    return -1*((int) (floor(log(abs(x)))));
+    return -1*((int) (floor(log(fabs(x)))));
 }
+
 // REF: https://stackoverflow.com/questions/20733590/dot-product-function-in-c-language
 // Find dot prodcut of double arrays v and u of size 3
 // Returns: double scalar
-double dot_product(double* v, double* u) {
+double dot_product(vector v, vector u) {
     int n = 3;
     double result = 0.0;
     for (int i = 0; i < n; i++)
-        result += v[i]*u[i];
+        result += v.d[i]*u.d[i];
     return result;
 }
 // Cross product across double arrays a and b of size 3 
 // Returns: double array
-double* cross_product (double* a, double* b)
-{
-    double product[3]; 
-    product[0] = a[1] * b[2] - a[2] * b[1];
-    product[1] = a[0] * b[2] - a[2] * b[0];
-    product[2] = a[0] * b[1] - a[1] * b[0];
+vector cross_product(vector a, vector b) {
+    vector product = {0.,0.,0.}; 
+    product[0] = a.d[1] * b.d[2] - a.d[2] * b.d[1]; // error here where i left off
+    product[1] = a.d[0] * b.d[2] - a.d[2] * b.d[0];
+    product[2] = a.d[0] * b.d[1] - a.d[1] * b.d[0];
     return product;
 }
 // Multiply across double arrays a and b of size 3 
@@ -142,11 +152,11 @@ double distance_circle(double* u, double* P, double* C, double radius, int quadr
     double rootA = b_term - sqrt_term;
     double rootB = b_term + sqrt_term;
     if (quadrant != 0) { // if in corner don't use the other 3/4ths of the circle to find distance only 4th quadrant part
-        if (abs(rootA) > abs(rootB)) return abs(rootA);
-        else return abs(rootB);
+        if (fabs(rootA) > fabs(rootB)) return fabs(rootA);
+        else return fabs(rootB);
     } else {
-        if ((rootA < 0) && (dot_product(u,P) < 0)) return abs(rootA);
-        else return abs(rootB);
+        if ((rootA < 0) && (dot_product(u,P) < 0)) return fbs(rootA);
+        else return fabs(rootB);
     }
 }
 
@@ -202,7 +212,7 @@ double distance_solver(double* u, double* o, double* center, double* radius, dou
 double* photon_interaction(double* o,double* u, double* n, int *notabsorbed, double n_1, double n_2) {
     double* u_r = aadd(u,smult(n,-2*dot_product(u, n))); // u_new = u - 2 (u . n)*n
     double* v[3];
-    if(dot_product(u,n) < 0) { // does a normalized vector in 3d equate to normalized vector in 2d?
+    if(dot_product(u,n) < 0) {
         double* D = smult(u,-1);
     } else {
         double* D = u;
@@ -212,24 +222,48 @@ double* photon_interaction(double* o,double* u, double* n, int *notabsorbed, dou
     double sqrt_term = sqrt(1 - inside_sqrt);       // cos(theta)_transmission
     double Rs = pow(abs((n_1*cos(theta) - n_2*sqrt_term)/(n_1*cos(theta) + n_2*sqrt_term)),2);
     double Rp = pow(abs((n_1*sqrt_term - n_2*cos(theta))/(n_1*sqrt_term + n_2*cos(theta))),2);
-                                                    // Determine probability of reflectance
+    // Determine probability of reflectance
     if ((((double)rand())/RAND_MAX) < ((Rs+Rp)/2)) { 
         notabsorbed = 1;                            // if random chance is high enough reflect !
         return normalize(u_r);                      // return full internal reflection and not absorbed is True
     }                                               // else photon is transmitted to white paint
     if ((((double)rand())/RAND_MAX) < 0.80) {       // does it get absorbed? change probability when you get more data
-        notabsorbed = 0;
-        return normalize(u_r);                      // not absorbed is False
-    } else {                                           // no it didn't get absorbed!
-        double theta_new = (((double)rand())/RAND_MAX)*2*pi;   // new theta direction of photon
+        notabsorbed = 0;                            // not absorbed is False
+        return normalize(u_r);                      
+    } else {                                        // case of it didn't get absorbed!
+        double theta_new = (((double)rand())/RAND_MAX)*2*pi; // new theta direction of photon
         double phi_new = (((double)rand())/RAND_MAX)*pi;     // new phi   direction of photon
-        double new_u = {sin(phi_new)*cos(theta_new),sin(phi_new)*sin(theta_new),cos(phi_new)};
-        double new_u = normalize(new_u);
-        change_factor = np.random.random()-0.5
-        u_r = u_r + change_factor*new_u
-        return self.normalize(u_r), True    
-    }      
+        double new_u[3];
+        u[0] = sin(phi_new)*cos(theta_new);
+        u[1] = sin(phi_new)*sin(theta_new);
+        u[2] = cos(phi_new);
+        new_u = normalize(u);
+        double change_factor = (((double)rand())/RAND_MAX)-0.5;      // chosen so new direction is at least...
+        u_r = aadd(u_r, smult(new_u, change_factor));                // ...within bounds of scinatillator
+        notabsorbed = 1;
+        return normalize(u_r);
+    }
 }
+
+// Calculate n vector for all planes and surfaces in apparatus
+double* n_vec_calculate(double* o, double* scint_plane, double* light_guide_planes, double* corner_center, double corner_radius) {
+    if (o[2] == scint_plane[0])                                    // bottom of scint
+        return {0.,0.,+1.};
+    if (o[2] == scint_plane[1])                                    // top of scint
+        return {0.,0.,-1.};
+    if (o[0] == light_guide_planes[0])                             // y plane of light guide 
+        return {0.,+1.,0.};
+    if (o[1] == light_guide_planes[1])                             // x plane of light guide
+        return {-1.,0.,0.};
+    if ((o[0] >= corner_center[0]) & (o[1] <= corner_center[1]))   // in corner
+        return normalize(asub(o,corner_center));
+    else {                                                         // else in main scintillator
+        double* z = {0.,0.,0.};                        
+        return normalize(asub(o,));
+    }
+}
+
+
 
 int main() {
     //////////////////////////////////
