@@ -3,6 +3,9 @@
         "monte_carlo_April_2023.C": "cpp",
         "complex": "c",
         "cmath": "c",
-        "chrono": "c"
-    }
+        "chrono": "c",
+        "aesop_0423_script.h": "c"
+    },
+    "C_Cpp.errorSquiggles": "enabled",
+    "C_Cpp.intelliSenseEngineFallback": "disabled"
 }
