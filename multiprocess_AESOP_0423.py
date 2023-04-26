@@ -9,6 +9,7 @@ import pandas as pd
 import sys
 from tqdm import tqdm
 import random
+from multiprocessing import Pool, Process
  
 class Simulation:
     def __init__(self):
@@ -296,6 +297,11 @@ class Simulation:
         self.seperation_time = kwargs.get('delta_t', 1e6) # in ps
         # FIND PARTICLE PATH
         times = []; points = []; photons = []
+        processes = [Process(target=self.particle_path, args=(self.t_initial+self.seperation_time*mult,self.particle_init_angle_range,
+                                                              self.T1z,self.T1_width,self.T4z,self.T4_width,self.T1_radius,self.T4_radius,
+                                                              self.mean_free_path_scints,self.photons_produced_per_MeV,self.pr_of_scintillation)) for mult in range(num_particles)]
+        for process in processes:
+            process.start()
         for mult in range(num_particles):
             time_i, point_i, photon_i = self.particle_path(t=self.t_initial+self.seperation_time*mult, phi_range_deg=self.particle_init_angle_range, T1_z=self.T1z, T1_width=self.T1_width, 
                                                 T4_z=self.T4z, T4_width=self.T4_width, T1_radius=self.T1_radius, T4_radius=self.T4_radius, mean_free_path=self.mean_free_path_scints, 
