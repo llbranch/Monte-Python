@@ -50,7 +50,22 @@ class Simulation:
         self.pr_of_scintillation = 0.8 
         self.max_simulated_reflections = 8
         self.pmt_electron_travel_time = 0 # approx 16 ns
-        self.artificial_gain = 10 # gain factor
+        self.artificial_gain = 100 # gain factor
+        self.seperation_time = 1e6 # ps
+        
+        # Introduction Print Statement
+        print("######################################################")
+        print("Generated Apparatus Simulation with following defaults")
+        print("######################################################")
+        print("PARTICLE: Mean Free Path =", self.mean_free_path_scints, "cm")
+        print("PARTICLE: Time Seperation between sequentual Particles if simulation more than 1 =",self.seperation_time)
+        print("SCINT:    Probability of Scintillaton =", self.pr_of_scintillation)
+        print("PMT:      Quantum Efficiency is set to", self.QE, "by default to keep more pulses")
+        print("PMT:      Energy per Photoelectron is set to", self.E_per_electron, "by best estimation")
+        print("PMT:      Artificial Gain on Output Current =", self.artificial_gain)
+        print("\nRun with .run() function given optional arguments below")
+        print("integer n particles, 'delta_t' =", self.seperation_time, "ps particle time seperation")
+        
     #############################
     # HELPER FUNCTIONS
     #############################
@@ -278,11 +293,11 @@ class Simulation:
             num_particles = arg[0]
         else:
             num_particles = 1 
-        seperation_time = kwargs.get('delta_t', 1e6) # in ps
+        self.seperation_time = kwargs.get('delta_t', 1e6) # in ps
         # FIND PARTICLE PATH
         times = []; points = []; photons = []
         for mult in range(num_particles):
-            time_i, point_i, photon_i = self.particle_path(t=self.t_initial+seperation_time*mult, phi_range_deg=self.particle_init_angle_range, T1_z=self.T1z, T1_width=self.T1_width, 
+            time_i, point_i, photon_i = self.particle_path(t=self.t_initial+self.seperation_time*mult, phi_range_deg=self.particle_init_angle_range, T1_z=self.T1z, T1_width=self.T1_width, 
                                                 T4_z=self.T4z, T4_width=self.T4_width, T1_radius=self.T1_radius, T4_radius=self.T4_radius, mean_free_path=self.mean_free_path_scints, 
                                                 photons_per_E=self.photons_produced_per_MeV, prob_scint=self.pr_of_scintillation)
             if mult == 0: 
@@ -357,6 +372,8 @@ class Simulation:
         self.signals_channelT4 = np.array(signals_channelT4) * self.q / 1e-12
         self.output_times_channelT1 = np.array(output_times_channelT1)
         self.output_times_channelT4 = np.array(output_times_channelT4)
+    
+    # Output function
     def to_csv(self, channels=2):
         # OUTPUT FORMATTING
         if channels==1:
