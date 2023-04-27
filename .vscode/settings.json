@@ -7,5 +7,10 @@
         "aesop_0423_script.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled",
-    "C_Cpp.intelliSenseEngineFallback": "disabled"
+    "C_Cpp.intelliSenseEngineFallback": "disabled",
+    "python.testing.pytestArgs": [
+        "."
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true
 }

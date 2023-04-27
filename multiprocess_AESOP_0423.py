@@ -6,10 +6,11 @@
 
 import numpy as np
 import pandas as pd
-import sys
 from tqdm import tqdm
 import random
-from multiprocessing import Pool, Process
+from time import perf_counter
+from datetime import timedelta
+from multiprocessing import Pool, cpu_count, freeze_support
  
 class Simulation:
     def __init__(self):
@@ -210,7 +211,7 @@ class Simulation:
         round_const = self.round_to_sig(mean_free_path)
         o = np.float64((maxdist*np.cos(theta), maxdist*np.sin(theta), T1_z+T1_width+2))   # x, y, top of T1_z+2
         u = np.array((np.cos(theta)*np.sin(phi),np.sin(theta)*np.sin(phi),np.cos(phi)),dtype=np.float64)
-        print(f"u=({u[0]:.2f},{u[1]:.2f},{u[2]:.2f})")
+        # print(f"u=({u[0]:.2f},{u[1]:.2f},{u[2]:.2f})")
         photons = [0]                                                                     # begin photon array
         points = [o]                                                                      # current point 
         times = [t]                                                                       # current t 
@@ -243,19 +244,19 @@ class Simulation:
                         z = points[-1][2]
                         z_1 = (z+mean_free_path*u[2]).round(round_const)
                         inside_scint = (z_1 <= (Ttop)) & (z_1 >= Tbottom)
-        print(f"time elapsed in scintillators: {np.abs(times[1]-times[-1]):.2f}ps total scintillation points: {len(points[1:])}")
+        # print(f"time elapsed in scintillators: {np.abs(times[1]-times[-1]):.2f}ps total scintillation points: {len(points[1:])}")
         return np.array(times, dtype=np.float64)[1:], np.array(points, dtype=np.float64)[1:], np.array(photons[1:], dtype=np.float64)
 
 
-    def scintillator_monte_carlo(self, o, notabsorbed, scint_radius, scint_plane, scint_width, light_guide_planes, pmt_center, pmt_radius, N_max, dt):
-        track_history = np.zeros((N_max+1,7))         # x, y history of Photon
+    def scintillator_monte_carlo(self, o, notabsorbed, scint_radius, scint_plane, scint_width, light_guide_planes, pmt_center, pmt_radius, N_max, dt, keepdata):
+        if keepdata: track_history = np.zeros((N_max+1,7))         # x, y history of Photon
         corner_radius = scint_width*4
         corner_center = [scint_radius-corner_radius,-scint_radius+corner_radius,scint_plane[0]]
         theta = random.uniform(0,2*np.pi)             # first theta direction of photon
         phi = random.uniform(0,np.pi)                 # first phi   direction of photon
         PMT_hit_condition = False
         u = np.array([np.sin(phi)*np.cos(theta),np.sin(phi)*np.sin(theta),np.cos(phi)]) # first direction unit vector
-        track_history[0,:] = [o[0],o[1],o[2],u[0],u[1],u[2],notabsorbed]
+        if keepdata: track_history[0,:] = [o[0],o[1],o[2],u[0],u[1],u[2],notabsorbed]
         i = 1
         while (i < N_max+1) & (not PMT_hit_condition) & (notabsorbed is True):
             ds, PMT_hit_condition = self.distance_solver(u, o, np.array([0,0,scint_plane[0]]),scint_radius, scint_plane, corner_center, corner_radius, pmt_center, pmt_radius)
@@ -265,11 +266,14 @@ class Simulation:
     #         print(f"step {i}: ds={ds:.2f}cm dt={dt:.2f}ps Absorbed?={not notabsorbed} xyz =({x:.2f},{y:.2f},{z:.2f}) u=({u[0]:.2f},{u[1]:.2f},{u[2]:.2f})")
             n = self.n_vec_calculate(o, scint_plane, light_guide_planes, corner_center, corner_radius)
             u, notabsorbed = self.photon_interaction(o, u, n, notabsorbed, scint_plane)
-            track_history[i] = [x,y,z,u[0],u[1],u[2],notabsorbed]
+            if keepdata: track_history[i] = [x,y,z,u[0],u[1],u[2],notabsorbed]
             i+=1
-        if i < N_max+1:
+        if keepdata & (i < N_max+1):
             track_history = track_history[:i,:]
-        return PMT_hit_condition, dt, track_history
+        if keepdata:
+            return PMT_hit_condition, dt, track_history
+        else:
+            return PMT_hit_condition, dt, 1 # placeholder
 
     # PMT SIMULATION
     def photoElectrons(self, photons): # Main monte carlo
@@ -288,30 +292,45 @@ class Simulation:
     #############################
     # RUN SIMULATION 
     #############################
-
-    def run(self, *arg, **kwargs):
-        if arg:
-            num_particles = arg[0]
-        else:
-            num_particles = 1 
-        self.seperation_time = kwargs.get('delta_t', 1e6) # in ps
-        # FIND PARTICLE PATH
-        times = []; points = []; photons = []
-        processes = [Process(target=self.particle_path, args=(self.t_initial+self.seperation_time*mult,self.particle_init_angle_range,
-                                                              self.T1z,self.T1_width,self.T4z,self.T4_width,self.T1_radius,self.T4_radius,
-                                                              self.mean_free_path_scints,self.photons_produced_per_MeV,self.pr_of_scintillation)) for mult in range(num_particles)]
-        for process in processes:
-            process.start()
-        for mult in range(num_particles):
-            time_i, point_i, photon_i = self.particle_path(t=self.t_initial+self.seperation_time*mult, phi_range_deg=self.particle_init_angle_range, T1_z=self.T1z, T1_width=self.T1_width, 
+    def particle_task(self, mult):
+        return self.particle_path(t=self.t_initial+self.seperation_time*mult, phi_range_deg=self.particle_init_angle_range, T1_z=self.T1z, T1_width=self.T1_width, 
                                                 T4_z=self.T4z, T4_width=self.T4_width, T1_radius=self.T1_radius, T4_radius=self.T4_radius, mean_free_path=self.mean_free_path_scints, 
                                                 photons_per_E=self.photons_produced_per_MeV, prob_scint=self.pr_of_scintillation)
-            if mult == 0: 
-                times = time_i; points = point_i; photons = photon_i
-            else:
+    def scint_taskT1(self, xpoint, ypoint, zpoint, time_i):
+        point_i = np.hstack((xpoint,ypoint,zpoint))
+        return self.scintillator_monte_carlo(point_i, notabsorbed=True, scint_radius=self.T1_radius, 
+                                                        scint_plane=np.array([self.T1z,self.T1z+self.T1_width]), scint_width=self.T1_width, 
+                                                        light_guide_planes=[self.T1_radius,-self.T1_radius], 
+                                                        pmt_center=[self.T1_radius-4*0.5,-self.T1_radius+4*0.5,self.T1z], pmt_radius=self.PMT1_radius,
+                                                        N_max=self.max_simulated_reflections, dt=time_i, keepdata=False)
+    def scint_taskT4(self, xpoint, ypoint, zpoint, time_i):
+        point_i = np.hstack((xpoint,ypoint,zpoint))
+        return self.scintillator_monte_carlo(point_i, notabsorbed=True, scint_radius=self.T4_radius, 
+                                                        scint_plane=np.array([self.T4z,self.T4z+self.T4_width]), scint_width=self.T4_width, 
+                                                        light_guide_planes=[self.T4_radius,-self.T4_radius], 
+                                                        pmt_center=[self.T4_radius-4*0.5,-self.T4_radius+4*0.5,self.T4z], pmt_radius=self.PMT4_radius,
+                                                        N_max=self.max_simulated_reflections, dt=time_i, keepdata=False)
+    def days_hours_minutes(self, td):
+        return td.days, td.seconds//3600, (td.seconds//60)%60, td.total_seconds()#-60*((td.seconds//60)%60)
+    def run(self, *arg, **kwargs):
+        freeze_support()
+        if arg:
+            num_particles = int(arg[0])
+            print(f"Generating {num_particles} particles now...")
+        else:
+            num_particles = 1
+            print(f"Generating {num_particles} particle now...")
+        self.seperation_time = kwargs.get('delta_t', 1e6) # in ps
+        logstarttime = perf_counter()
+        # FIND PARTICLE PATH
+        times = np.zeros(1); points = np.zeros((1,3)); photons = np.zeros(1)
+        with Pool(processes=cpu_count()-1) as pool:
+            res = pool.map(self.particle_task, range(num_particles))
+            for (time_i, point_i, photon_i) in res:
                 times = np.append(times, time_i, axis=0)
                 points = np.append(points,point_i, axis=0)
                 photons = np.append(photons,photon_i)
+        logendparticle = perf_counter()
         N = np.sum(photons)
         print("Photons generated", N)
 
@@ -319,38 +338,36 @@ class Simulation:
         T1_input_times = []
         T4_input_times = []
         pmt_hits = 0
-        with tqdm(total=N, file=sys.stdout) as pbar:
-            for i,(point_i,time_i) in enumerate(zip(points,times)):
-                # IF IN T1
-                if point_i[2] >= self.T1z:
-                    for photon in range(photons[i].astype(int)):
-                        hit_PMT, travel_time, check = self.scintillator_monte_carlo(point_i, notabsorbed=True, scint_radius=self.T1_radius, 
-                                                        scint_plane=np.array([self.T1z,self.T1z+self.T1_width]), scint_width=self.T1_width, 
-                                                        light_guide_planes=[self.T1_radius,-self.T1_radius], 
-                                                        pmt_center=[self.T1_radius-4*0.5,-self.T1_radius+4*0.5,self.T1z], pmt_radius=self.PMT1_radius,
-                                                        N_max=self.max_simulated_reflections, dt=time_i)
-                        if hit_PMT: 
-                            T1_input_times.append(travel_time)
-                            pmt_hits +=1
-                        pbar.set_description(f'hits: {pmt_hits}')
-                        pbar.update(1)
-                else:
-                # ELSE IN T4
-                    for photon in range(photons[i].astype(int)):
-                        hit_PMT, travel_time, _ = self.scintillator_monte_carlo(point_i, notabsorbed=True, scint_radius=self.T4_radius, 
-                                                        scint_plane=np.array([self.T4z,self.T4z+self.T4_width]), scint_width=self.T4_width, 
-                                                        light_guide_planes=[self.T4_radius,-self.T4_radius], 
-                                                        pmt_center=[self.T4_radius-4*0.5,-self.T4_radius+4*0.5,self.T4z], pmt_radius=self.PMT4_radius,
-                                                        N_max=self.max_simulated_reflections, dt=time_i)
-                        if hit_PMT: 
-                            T4_input_times.append(travel_time)
-                            pmt_hits +=1
-                        pbar.set_description(f'hits: {pmt_hits}')
-                        pbar.update(1)
+        T1points = (points[1:])[points[1:,2] >= self.T1z];
+        T1times = (times[1:])[points[1:,2] >= self.T1z]; 
+        T1photons = (photons[1:])[points[1:,2] >= self.T1z]
+        T4points = (points[1:])[points[1:,2] < self.T1z]; T4times = (times[1:])[points[1:,2] < self.T1z]; T4photons = (photons[1:])[points[1:,2] < self.T1z]
+        print(f"Photons in T1: {len(T1photons)} and Photons in T4: {len(T4photons)}")
+        logstartphoton = perf_counter()
+        with Pool(processes=cpu_count()) as pool:
+            T1res = pool.starmap(self.scint_taskT1, tqdm(np.repeat(np.c_[T1points,T1times],T1photons.astype(int), axis=0),total=len(T1photons)))
+            T4res = pool.starmap(self.scint_taskT4, tqdm(np.repeat(np.c_[T4points,T4times],T4photons.astype(int), axis=0),total=len(T4photons)))
+            for (T1hit_PMT, T1travel_time, _),(T4hit_PMT, T4travel_time, _) in zip(T1res,T4res):
+                if T1hit_PMT:
+                    T1_input_times.append(T1travel_time)
+                    pmt_hits +=1
+                if T4hit_PMT:
+                    T4_input_times.append(T4travel_time)
+                    pmt_hits +=1
+        logendtime = perf_counter()
         # PRINT RESULTS
-        print("HITS on T1",len(T1_input_times),"\n",T1_input_times)
-        print("HITS on T4",len(T4_input_times),"\n",T4_input_times)
-
+        print("TIME ANALYSIS:")
+        pgtime = self.days_hours_minutes(timedelta(seconds=logendparticle-logstarttime))
+        phtime = self.days_hours_minutes(timedelta(seconds=logendtime-logstartphoton))
+        ttime = self.days_hours_minutes(timedelta(seconds=logendtime-logstarttime))
+        print(f"Generation of Particles     {pgtime[0]}days {pgtime[1]}hrs {pgtime[2]}mins {pgtime[3]}s")
+        print(f"Simulation of Photon Travel {phtime[0]}days {phtime[1]}hrs {phtime[2]}mins {phtime[3]}s")
+        print(f"Total Time Elapsed:         {ttime[0]}days {ttime[1]}hrs {ttime[2]}mins {ttime[3]}s")
+        print("RESULTS:")
+        print("HITS on T1",len(T1_input_times))
+        # print(T1_input_times)
+        print("HITS on T4",len(T4_input_times))
+        # print(T4_input_times)
         # BEGIN SIMULATING PMT PULSE
         signals_channelT1 = []
         signals_channelT4 = []
@@ -405,3 +422,7 @@ class Simulation:
                 print(df)
         print("Done!")
         
+        
+if __name__ is '__main__':
+    sim = Simulation()
+    sim.run(1)
