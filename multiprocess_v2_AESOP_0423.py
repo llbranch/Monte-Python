@@ -1,6 +1,6 @@
 #############################
-# AESOPE-Lite Monte Carlo
-# Multiprocess Edited Version 1 (Better)
+# AESOP-Lite Monte Carlo
+# Multiprocess Edited Script Version 2 (Worse)
 # Created by Liam Branch and Robert Johnson
 # Copyright UCSC 2023
 #############################
@@ -12,6 +12,7 @@ import random
 from time import perf_counter
 from datetime import timedelta
 from multiprocessing import Pool, cpu_count, freeze_support
+from concurrent.futures import ProcessPoolExecutor, as_completed
  
 class Simulation:
     def __init__(self):
@@ -55,7 +56,6 @@ class Simulation:
         self.pmt_electron_travel_time = 0 # approx 16 ns
         self.artificial_gain = 100 # gain factor
         self.seperation_time = 1e6 # ps
-        self.output_bin_width = 100 # ps
         
         # Introduction Print Statement
         print("######################################################")
@@ -67,7 +67,6 @@ class Simulation:
         print("PMT:      Quantum Efficiency is set to", self.QE, "by default to keep more pulses")
         print("PMT:      Energy per Photoelectron is set to", self.E_per_electron, "by best estimation")
         print("PMT:      Artificial Gain on Output Current =", self.artificial_gain)
-        print("OUTPUT:   Binning Width for PWL output file =", self.output_bin_width, "ps")
         print("\nRun with .run() function given optional arguments below")
         print("integer n particles, 'delta_t' =", self.seperation_time, "ps particle time seperation")
         
@@ -314,7 +313,7 @@ class Simulation:
                                                         pmt_center=[self.T4_radius-4*0.5,-self.T4_radius+4*0.5,self.T4z], pmt_radius=self.PMT4_radius,
                                                         N_max=self.max_simulated_reflections, dt=time_i, keepdata=False)
     def days_hours_minutes(self, td):
-        return td.days, td.seconds//3600, (td.seconds//60)%60, td.total_seconds()#-60*((td.seconds//60)%60)
+        return td.days, td.seconds//3600, (td.seconds//60)%60, td.total_seconds()-60*((td.seconds//60)%60)
     def run(self, *arg, **kwargs):
         freeze_support()
         if arg:
@@ -327,12 +326,13 @@ class Simulation:
         logstarttime = perf_counter()
         # FIND PARTICLE PATH
         times = np.zeros(1); points = np.zeros((1,3)); photons = np.zeros(1)
-        with Pool(processes=cpu_count()-1) as pool:
-            res = pool.map(self.particle_task, range(num_particles))
-            for (time_i, point_i, photon_i) in res:
-                times = np.append(times, time_i, axis=0)
-                points = np.append(points,point_i, axis=0)
-                photons = np.append(photons,photon_i)
+        executor = ProcessPoolExecutor(max_workers=cpu_count()-1)
+        future_photons = [executor.submit(self.particle_task, mult) for mult in range(num_particles)]
+        for future in as_completed(future_photons): # iterate over all submitted tasks and get results as they are available
+            (time_i,point_i, photon_i) = future.result() # blocks
+            times = np.append(times, time_i, axis=0)
+            points = np.append(points,point_i, axis=0)
+            photons = np.append(photons,photon_i)
         logendparticle = perf_counter()
         N = np.sum(photons)
         print("Photons generated", N)
@@ -347,16 +347,17 @@ class Simulation:
         T4points = (points[1:])[points[1:,2] < self.T1z]; T4times = (times[1:])[points[1:,2] < self.T1z]; T4photons = (photons[1:])[points[1:,2] < self.T1z]
         print(f"Photons in T1: {len(T1photons)} and Photons in T4: {len(T4photons)}")
         logstartphoton = perf_counter()
-        with Pool(processes=cpu_count()) as pool:
-            T1res = pool.starmap(self.scint_taskT1, tqdm(np.repeat(np.c_[T1points,T1times],T1photons.astype(int), axis=0),total=len(T1photons)))
-            T4res = pool.starmap(self.scint_taskT4, tqdm(np.repeat(np.c_[T4points,T4times],T4photons.astype(int), axis=0),total=len(T4photons)))
-            for (T1hit_PMT, T1travel_time, _),(T4hit_PMT, T4travel_time, _) in zip(T1res,T4res):
-                if T1hit_PMT:
-                    T1_input_times.append(T1travel_time)
-                    pmt_hits +=1
-                if T4hit_PMT:
-                    T4_input_times.append(T4travel_time)
-                    pmt_hits +=1
+        future_signalsT1 = [executor.submit(self.scint_taskT1, x, y, z, t) for (x, y, z, t) in tqdm(np.repeat(np.c_[T1points,T1times],T1photons.astype(int), axis=0),total=len(T1photons))]
+        future_signalsT4 = [executor.submit(self.scint_taskT4, x, y, z, t) for (x, y, z, t) in tqdm(np.repeat(np.c_[T4points,T4times],T4photons.astype(int), axis=0),total=len(T1photons))]
+        for (futureT1,futureT4) in zip(as_completed(future_signalsT1), as_completed(future_signalsT4)):
+            (T1hit_PMT, T1travel_time, _) = futureT1.result()
+            (T4hit_PMT, T4travel_time, _) = futureT4.result()
+            if T1hit_PMT:
+                T1_input_times.append(T1travel_time)
+                pmt_hits +=1
+            if T4hit_PMT:       
+                T4_input_times.append(T4travel_time)
+                pmt_hits +=1
         logendtime = perf_counter()
         # PRINT RESULTS
         print("TIME ANALYSIS:")
@@ -405,8 +406,8 @@ class Simulation:
         if channels==1:
             print("Exporing to 1 channel...")
             fill_data = np.zeros((len(self.output_times)*2+2, 2))
-            fill_data[1:-1:2,0] = self.output_times-(self.output_bin_width/2)
-            fill_data[2:-1:2,0] = self.output_times+(self.output_bin_width/2)
+            fill_data[1:-1:2,0] = self.output_times-10
+            fill_data[2:-1:2,0] = self.output_times+10
             df = pd.DataFrame(fill_data, columns=['time','current'])
             df = pd.concat([df, pd.DataFrame({'time':self.output_times,'current':self.signals})], ignore_index=True).sort_values(by=['time'])
             df['time'] = df['time']/1e12
@@ -416,8 +417,8 @@ class Simulation:
             print("Exporing to 2 channels...")
             for time,signal,ch in zip([self.output_times_channelT1,self.output_times_channelT4],[self.signals_channelT1,self.signals_channelT4],[1,4]):
                 fill_data = np.zeros((len(time)*2+2, 2))
-                fill_data[1:-1:2,0] = time-(self.output_bin_width/2)
-                fill_data[2:-1:2,0] = time+(self.output_bin_width/2)
+                fill_data[1:-1:2,0] = time-10
+                fill_data[2:-1:2,0] = time+10
                 df = pd.DataFrame(fill_data, columns=['time','current'])
                 df = pd.concat([df, pd.DataFrame({'time':time,'current':signal})], ignore_index=True).sort_values(by=['time'])
                 df['time'] = df['time']/1e12
@@ -426,6 +427,6 @@ class Simulation:
         print("Done!")
         
         
-if __name__ is '__main__':
+if __name__ == '__main__':
     sim = Simulation()
-    sim.run(1)
+    sim.run(50)
