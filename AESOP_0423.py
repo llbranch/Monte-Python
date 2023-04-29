@@ -52,6 +52,7 @@ class Simulation:
         self.pmt_electron_travel_time = 0 # approx 16 ns
         self.artificial_gain = 100 # gain factor
         self.seperation_time = 1e6 # ps
+        self.output_bin_width = 20 # ps
         
         # Introduction Print Statement
         print("######################################################")
@@ -63,6 +64,7 @@ class Simulation:
         print("PMT:      Quantum Efficiency is set to", self.QE, "by default to keep more pulses")
         print("PMT:      Energy per Photoelectron is set to", self.E_per_electron, "by best estimation")
         print("PMT:      Artificial Gain on Output Current =", self.artificial_gain)
+        print("OUTPUT:   Binning Width for PWL output file =", self.output_bin_width, "ps")
         print("\nRun with .run() function given optional arguments below")
         print("integer n particles, 'delta_t' =", self.seperation_time, "ps particle time seperation")
         
@@ -290,9 +292,11 @@ class Simulation:
 
     def run(self, *arg, **kwargs):
         if arg:
-            num_particles = arg[0]
+            num_particles = int(arg[0])
+            print(f"Generating {num_particles} particles now...")
         else:
             num_particles = 1 
+            print(f"Generating {num_particles} particle now...")
         self.seperation_time = kwargs.get('delta_t', 1e6) # in ps
         # FIND PARTICLE PATH
         times = []; points = []; photons = []
@@ -342,6 +346,7 @@ class Simulation:
                         pbar.set_description(f'hits: {pmt_hits}')
                         pbar.update(1)
         # PRINT RESULTS
+        print("RESULTS:")
         print("HITS on T1",len(T1_input_times),"\n",T1_input_times)
         print("HITS on T4",len(T4_input_times),"\n",T4_input_times)
 
@@ -379,8 +384,8 @@ class Simulation:
         if channels==1:
             print("Exporing to 1 channel...")
             fill_data = np.zeros((len(self.output_times)*2+2, 2))
-            fill_data[1:-1:2,0] = self.output_times-10
-            fill_data[2:-1:2,0] = self.output_times+10
+            fill_data[1:-1:2,0] = self.output_times-(self.output_bin_width/2)
+            fill_data[2:-1:2,0] = self.output_times+(self.output_bin_width/2)
             df = pd.DataFrame(fill_data, columns=['time','current'])
             df = pd.concat([df, pd.DataFrame({'time':self.output_times,'current':self.signals})], ignore_index=True).sort_values(by=['time'])
             df['time'] = df['time']/1e12
@@ -390,12 +395,15 @@ class Simulation:
             print("Exporing to 2 channels...")
             for time,signal,ch in zip([self.output_times_channelT1,self.output_times_channelT4],[self.signals_channelT1,self.signals_channelT4],[1,4]):
                 fill_data = np.zeros((len(time)*2+2, 2))
-                fill_data[1:-1:2,0] = time-10
-                fill_data[2:-1:2,0] = time+10
+                fill_data[1:-1:2,0] = time-(self.output_bin_width/2)
+                fill_data[2:-1:2,0] = time+(self.output_bin_width/2)
                 df = pd.DataFrame(fill_data, columns=['time','current'])
                 df = pd.concat([df, pd.DataFrame({'time':time,'current':signal})], ignore_index=True).sort_values(by=['time'])
                 df['time'] = df['time']/1e12
                 df.to_csv('monte_carlo_output_channel'+str(ch)+'.txt', float_format='%.13f', header=False, index=False, sep=' ')
                 print(df)
         print("Done!")
-        
+
+if __name__ is '__main__':
+    sim = Simulation()
+    sim.run(1)
