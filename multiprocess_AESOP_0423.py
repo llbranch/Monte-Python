@@ -345,7 +345,7 @@ class Simulation:
         T1times = (times[1:])[points[1:,2] >= self.T1z]; 
         T1photons = (photons[1:])[points[1:,2] >= self.T1z]
         T4points = (points[1:])[points[1:,2] < self.T1z]; T4times = (times[1:])[points[1:,2] < self.T1z]; T4photons = (photons[1:])[points[1:,2] < self.T1z]
-        print(f"Photons in T1: {len(T1photons)} and Photons in T4: {len(T4photons)}")
+        print(f"Photons in T1: {np.sum(T1photons)} and Photons in T4: {np.sum(T4photons)}")
         logstartphoton = perf_counter()
         with Pool(processes=cpu_count()) as pool:
             T1res = pool.starmap(self.scint_taskT1, tqdm(np.repeat(np.c_[T1points,T1times],T1photons.astype(int), axis=0),total=len(T1photons)))
