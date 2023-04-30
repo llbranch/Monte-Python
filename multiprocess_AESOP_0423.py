@@ -1,5 +1,5 @@
 #############################
-# AESOPE-Lite Monte Carlo
+# AESOP-Lite Monte Carlo
 # Multiprocess Edited Version 1 (Better)
 # Created by Liam Branch and Robert Johnson
 # Copyright UCSC 2023
@@ -62,7 +62,7 @@ class Simulation:
         print("Generated Apparatus Simulation with following defaults")
         print("######################################################")
         print("PARTICLE: Mean Free Path =", self.mean_free_path_scints, "cm")
-        print("PARTICLE: Time Seperation between sequentual Particles if simulation more than 1 =",self.seperation_time)
+        print("PARTICLE: Time Seperation between sequential Particles if simulation more than 1 =",self.seperation_time)
         print("SCINT:    Probability of Scintillaton =", self.pr_of_scintillation)
         print("PMT:      Quantum Efficiency is set to", self.QE, "by default to keep more pulses")
         print("PMT:      Energy per Photoelectron is set to", self.E_per_electron, "by best estimation")
@@ -348,8 +348,8 @@ class Simulation:
         print(f"Photons in T1: {np.sum(T1photons)} and Photons in T4: {np.sum(T4photons)}")
         logstartphoton = perf_counter()
         with Pool(processes=cpu_count()) as pool:
-            T1res = pool.starmap(self.scint_taskT1, tqdm(np.repeat(np.c_[T1points,T1times],T1photons.astype(int), axis=0),total=len(T1photons)))
-            T4res = pool.starmap(self.scint_taskT4, tqdm(np.repeat(np.c_[T4points,T4times],T4photons.astype(int), axis=0),total=len(T4photons)))
+            T1res = pool.starmap(self.scint_taskT1, tqdm(np.repeat(np.c_[T1points,T1times],T1photons.astype(int), axis=0),total=np.sum(T1photons)))
+            T4res = pool.starmap(self.scint_taskT4, tqdm(np.repeat(np.c_[T4points,T4times],T4photons.astype(int), axis=0),total=np.sum(T4photons)))
             for (T1hit_PMT, T1travel_time, _),(T4hit_PMT, T4travel_time, _) in zip(T1res,T4res):
                 if T1hit_PMT:
                     T1_input_times.append(T1travel_time)
