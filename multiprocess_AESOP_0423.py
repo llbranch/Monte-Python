@@ -10,7 +10,7 @@ import pandas as pd
 from tqdm import tqdm
 import random
 from time import perf_counter
-from datetime import timedelta
+from datetime import timedelta, date
 from multiprocessing import Pool, cpu_count, freeze_support
  
 class Simulation:
@@ -416,16 +416,20 @@ class Simulation:
             print("Exporing to 2 channels...")
             for time,signal,ch in zip([self.output_times_channelT1,self.output_times_channelT4],[self.signals_channelT1,self.signals_channelT4],[1,4]):
                 fill_data = np.zeros((len(time)*2+2, 2))
-                fill_data[1:-1:2,0] = time-(self.output_bin_width/2)
-                fill_data[2:-1:2,0] = time+(self.output_bin_width/2)
+                fill_bin = np.zeros((len(time)*2+2, 2))
+                fill_bin[1:-1:2,0] = time-(self.output_bin_width/2) # add bin width
+                fill_bin[2:-1:2,0] = time+(self.output_bin_width/2)
+                fill_data[1:-1:2,0] = time-(self.output_bin_width/2-1) # add zeros for integration
+                fill_data[2:-1:2,0] = time+(self.output_bin_width/2+1)
                 df = pd.DataFrame(fill_data, columns=['time','current'])
                 df = pd.concat([df, pd.DataFrame({'time':time,'current':signal})], ignore_index=True).sort_values(by=['time'])
                 df['time'] = df['time']/1e12
-                df.to_csv('monte_carlo_output_channel'+str(ch)+'.txt', float_format='%.13f', header=False, index=False, sep=' ')
+                df.to_csv('monte_carlo_input'+str(self.num_particles)+'ch'+str(ch,date.today())+'.txt', float_format='%.13f', header=False, index=False, sep=' ')
                 print(df)
         print("Done!")
         
         
 if __name__ is '__main__':
     sim = Simulation()
-    sim.run(1)
+    sim.run(50)
+    sim.to_csv()
