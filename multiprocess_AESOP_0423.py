@@ -53,7 +53,7 @@ class Simulation:
         self.pr_of_scintillation = 0.8 
         self.max_simulated_reflections = 8
         self.pmt_electron_travel_time = 0 # approx 16 ns
-        self.artificial_gain = 100 # gain factor
+        self.artificial_gain = 1 # gain factor
         self.seperation_time = 1e6 # ps
         self.output_bin_width = 100 # ps
         self.num_particles = 1
@@ -409,34 +409,24 @@ class Simulation:
             fill_data[1:-1:2,0] = self.output_times-(self.output_bin_width/2)
             fill_data[2:-1:2,0] = self.output_times+(self.output_bin_width/2)
             df = pd.DataFrame(fill_data, columns=['time','current'])
-            df = pd.concat([df, pd.DataFrame({'time':self.output_times,'current':self.signals})], ignore_index=True).sort_values(by=['time'])
+            df = pd.concat([df, pd.DataFrame({'time':self.output_times,'current':self.signals})], ignore_index=True).sort_values(by=['time']).reset_index(drop=True)
             df['time'] = df['time']/1e12
             df.to_csv('monte_carlo_output.txt', float_format='%.13f', header=False, index=False, sep=' ')
             print(df)
         else:
             print("Exporing to 2 channels...")
             for time,signal,ch in zip([self.output_times_channelT1,self.output_times_channelT4],[self.signals_channelT1,self.signals_channelT4],[1,4]):
-                # set new signal bool to true
-                # for each signal
-                #   if signal is new
-                #       then place zero -10ps before signal
-                #   check if time difference between signal is less than minimum width dt
-                #       if yes then place zero +10 ps away from current signal
-                #       set new signal bool to false 
-                #   else continue to next signal
-                new_signal = True
-                fill_data = [[],[]]
-                # for t,s in zip(time,signal):
-                    # if new_signal:
-                # fill_data = 
-                fill_data = np.zeros((len(time)+1, 2))
-                fill_bin = np.zeros((len(time)+1, 2))
-                fill_bin[1:-1,1] = np.repeat(signal, 2)
-                fill_bin[1:-1,0] = time-(self.output_bin_width/2) # add bin width
-                fill_data[1:-1,0] = time-(self.output_bin_width/2-1) # add zeros for integration
-                df = pd.DataFrame(fill_data, columns=['time','current'])
-                df = pd.concat([df, pd.DataFrame(fill_bin, columns=['time','current'])])
-                df = pd.concat([df, pd.DataFrame({'time':time,'current':signal})], ignore_index=True).sort_values(by=['time'])
+                df = pd.DataFrame({'time':time,'current':signal}).sort_values(by=['time'])          # return sorted dataframe
+                fill_data = []                                                                      # declare empty array
+                fill_data.append([df['time'].iloc[0]-self.output_bin_width/5,0])                    # add zero at beginning
+                for i in range(len(time)-1):                                                        # for each time index
+                    if abs(df['time'].iloc[i]-df['time'].iloc[i+1]) > self.output_bin_width:        # if dt between signals is greater than minimum bin width
+                        fill_data.append([df['time'].iloc[i]+self.output_bin_width/5,0])            # place zero after current signal
+                        fill_data.append([df['time'].iloc[i+1]-self.output_bin_width/5,0])          # place zero before next signal
+                fill_data.append([df['time'].iloc[-1]+self.output_bin_width/5,0])                   # add zero at end
+                fill_data = np.array(fill_data)
+                fill = pd.DataFrame(fill_data, columns=['time','current'])
+                df = pd.concat([fill, df], ignore_index=True).sort_values(by=['time']).reset_index(drop=True)
                 df['time'] = df['time']/1e12
                 df.to_csv('monte_carlo_input'+str(self.num_particles)+'ch'+str(ch)+'_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt', float_format='%.13f', header=False, index=False, sep=' ')
                 print(df)
@@ -445,5 +435,6 @@ class Simulation:
         
 if __name__ == '__main__':
     sim = Simulation()
-    sim.run(1)
+    sim.artificial_gain = 3
+    sim.run(5)
     sim.to_csv()
