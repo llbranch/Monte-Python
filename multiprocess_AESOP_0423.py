@@ -37,8 +37,6 @@ class Simulation:
         self.PMT4_radius = 4.6/2 #cm 
         # x2PMT1=8.*np.cos(np.radians(-53.72))*2.54 For test
         # y2PMT1=8.*np.sin(np.radians(-53.72))*2.54 For test
-        self.xPMT4=9.5*np.cos(110)*2.54
-        self.yPMT4=9.5*np.sin(110)*2.54
         self.n_dynodes = 8
         self.V = np.linspace(150,850,self.n_dynodes)
         # V = [150,300,350,600,750,850]
@@ -315,7 +313,11 @@ class Simulation:
                                                         pmt_center=[self.T4_radius-4*0.5,-self.T4_radius+4*0.5,self.T4z], pmt_radius=self.PMT4_radius,
                                                         N_max=self.max_simulated_reflections, dt=time_i, keepdata=False)
     def days_hours_minutes(self, td):
-        return td.days, td.seconds//3600, (td.seconds//60)%60, td.total_seconds()#-60*((td.seconds//60)%60)
+        # days 
+        # hours - 24*#days 
+        # minutes - 60*#hours
+        # seconds - 60*#minutes
+        return td.days, td.seconds//3600-(24*td.days), (td.seconds//60)%60-(60*(td.seconds//3600)), td.total_seconds()-(60*((td.seconds//60)%60))
     def run(self, *arg, **kwargs):
         freeze_support()
         if arg:
@@ -342,19 +344,22 @@ class Simulation:
         T1_input_times = []
         T4_input_times = []
         pmt_hits = 0
-        T1points = (points[1:])[points[1:,2] >= self.T1z];
-        T1times = (times[1:])[points[1:,2] >= self.T1z]; 
+        T1points = (points[1:])[points[1:,2] >= self.T1z]
+        T1times = (times[1:])[points[1:,2] >= self.T1z]
         T1photons = (photons[1:])[points[1:,2] >= self.T1z]
-        T4points = (points[1:])[points[1:,2] < self.T1z]; T4times = (times[1:])[points[1:,2] < self.T1z]; T4photons = (photons[1:])[points[1:,2] < self.T1z]
+        T4points = (points[1:])[points[1:,2] < self.T1z]
+        T4times = (times[1:])[points[1:,2] < self.T1z]
+        T4photons = (photons[1:])[points[1:,2] < self.T1z]
         print(f"Photons in T1: {np.sum(T1photons)} and Photons in T4: {np.sum(T4photons)}")
         logstartphoton = perf_counter()
         with Pool(processes=cpu_count()) as pool:
             T1res = pool.starmap(self.scint_taskT1, tqdm(np.repeat(np.c_[T1points,T1times],T1photons.astype(int), axis=0),total=np.sum(T1photons)))
             T4res = pool.starmap(self.scint_taskT4, tqdm(np.repeat(np.c_[T4points,T4times],T4photons.astype(int), axis=0),total=np.sum(T4photons)))
-            for (T1hit_PMT, T1travel_time, _),(T4hit_PMT, T4travel_time, _) in zip(T1res,T4res):
+            for (T1hit_PMT, T1travel_time, _), in T1res:
                 if T1hit_PMT:
                     T1_input_times.append(T1travel_time)
                     pmt_hits +=1
+            for (T4hit_PMT, T4travel_time, _) in T4res:
                 if T4hit_PMT:
                     T4_input_times.append(T4travel_time)
                     pmt_hits +=1
@@ -402,6 +407,7 @@ class Simulation:
     
     # Output function
     def to_csv(self, channels=2):
+        
         # OUTPUT FORMATTING
         if channels==1:
             print("Exporing to 1 channel...")
@@ -431,8 +437,55 @@ class Simulation:
                 df.to_csv('monte_carlo_input'+str(self.num_particles)+'ch'+str(ch)+'_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt', float_format='%.13f', header=False, index=False, sep=' ')
                 print(df)
         print("Done!")
-        
-        
+    
+    #############################
+    # DEBUG AND PLOTTING
+    #############################
+
+    def data_for_cylinder_along_z(self, center_x,center_y,radius,height_z,pos_z):
+        z = np.linspace(pos_z, pos_z+height_z, 20)
+        theta = np.linspace(0, 2*np.pi, 20)
+        theta_grid, z_grid=np.meshgrid(theta, z)
+        x_grid = radius*np.cos(theta_grid) + center_x
+        y_grid = radius*np.sin(theta_grid) + center_y
+        return x_grid,y_grid,z_grid
+    
+    def plot_scintT1(self, photon_pos, input_time, *arg):
+        if arg and arg[0] == True:
+            print("Generate random!")
+            (time_i, point_i, _) = self.particle_task(1)
+            time_i = time_i[point_i[:,2] >= self.T1z]
+            point_i = point_i[point_i[:,2] >= self.T1z]
+            i = 0
+            if (len(arg) > 1) and (arg[1] < len(point_i)):
+                i = arg[1]
+            photon_pos = point_i[i]; input_time = time_i[i]
+        hit_PMT, _, tracks = self.scintillator_monte_carlo(photon_pos, notabsorbed=True, scint_radius=self.T1_radius, 
+                                                        scint_plane=np.array([self.T1z,self.T1z+self.T1_width]), scint_width=self.T1_width, 
+                                                        light_guide_planes=[self.T1_radius,-self.T1_radius], 
+                                                        pmt_center=[self.T1_radius-4*0.5,-self.T1_radius+4*0.5,self.T1z], pmt_radius=self.PMT1_radius,
+                                                        N_max=self.max_simulated_reflections, dt=input_time, keepdata=True)
+        import matplotlib.pyplot as plt
+        fig = plt.figure(figsize=(6,6))
+        ax = fig.add_subplot(111,projection='3d')
+        X, Y, Z = self.data_for_cylinder_along_z(0,0,self.T1_radius,self.T1_width,self.T1z)
+        PMTxyz = [self.T1_radius-4*0.5,-self.T1_radius+4*0.5,self.T1z]
+        PMT_X, PMT_Y, PMT_Z = self.data_for_cylinder_along_z(PMTxyz[0],PMTxyz[1],self.PMT1_radius,0.5,PMTxyz[2]-0.5)
+        ax.plot_wireframe(X, Y, Z, alpha=0.2)
+        ax.plot_wireframe(PMT_X, PMT_Y, PMT_Z, alpha=0.2, color='purple')
+        ax.scatter(photon_pos[0],photon_pos[1],photon_pos[2], color='red', marker='o')
+        ax.quiver(tracks[:,0],tracks[:,1],tracks[:,2], tracks[:,3], tracks[:,4],tracks[:,5], length=1, edgecolor='k', facecolor='black', linewidth=1.5)
+        ax.plot(tracks[:,0],tracks[:,1],tracks[:,2], alpha=0.5, color='C1', marker='.')
+        ax.text(0.9,0.9,0.9, f'hitPMT1? {hit_PMT}')
+        ax.grid(True)
+        ax.set_xlabel('x [cm]')
+        ax.set_ylabel('y [cm]')
+        ax.set_zlabel('z [cm]')
+        ax.set_zlim([self.T1z-0.5,self.T1z+1+0.5])
+        ax.set_ylim([-self.T1_radius,self.T1_radius])
+        ax.set_xlim([-self.T1_radius,self.T1_radius])
+        ax.view_init(elev=90, azim=-90, roll=0)
+        plt.show()
 if __name__ == '__main__':
     sim = Simulation()
     sim.artificial_gain = 3
