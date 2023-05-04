@@ -29,8 +29,8 @@ class Simulation:
         self.T4z=-28.07297 #cm is the bottom of T4
         self.T1_radius = 13 #cm
         self.T4_radius = 18 #cm 
-        self.xPMT4=9.5*np.cos(110)*2.54
-        self.yPMT4=9.5*np.sin(110)*2.54
+        self.xPMT4=9.5*np.cos(np.radians(110))*2.54
+        self.yPMT4=9.5*np.sin(np.radians(110))*2.54
         self.xPMT1=8.*np.cos(np.radians(-45))*2.54
         self.yPMT1=8.*np.sin(np.radians(-45))*2.54
         self.PMT1_radius = 4.6/2 #cm 
@@ -355,7 +355,7 @@ class Simulation:
         with Pool(processes=cpu_count()) as pool:
             T1res = pool.starmap(self.scint_taskT1, tqdm(np.repeat(np.c_[T1points,T1times],T1photons.astype(int), axis=0),total=np.sum(T1photons)))
             T4res = pool.starmap(self.scint_taskT4, tqdm(np.repeat(np.c_[T4points,T4times],T4photons.astype(int), axis=0),total=np.sum(T4photons)))
-            for (T1hit_PMT, T1travel_time, _), in T1res:
+            for (T1hit_PMT, T1travel_time, _) in T1res:
                 if T1hit_PMT:
                     T1_input_times.append(T1travel_time)
                     pmt_hits +=1
@@ -442,52 +442,94 @@ class Simulation:
     # DEBUG AND PLOTTING
     #############################
 
-    def data_for_cylinder_along_z(self, center_x,center_y,radius,height_z,pos_z):
+    def data_for_cylinder_along_z(self, center_x,center_y,radius,height_z,pos_z, start_theta, end_theta):
         z = np.linspace(pos_z, pos_z+height_z, 20)
-        theta = np.linspace(0, 2*np.pi, 20)
+        theta = np.linspace(start_theta, end_theta, 20)
         theta_grid, z_grid=np.meshgrid(theta, z)
         x_grid = radius*np.cos(theta_grid) + center_x
         y_grid = radius*np.sin(theta_grid) + center_y
         return x_grid,y_grid,z_grid
     
-    def plot_scintT1(self, photon_pos, input_time, *arg):
+    # Input: 3d photon position, input_time | Optional: int index of genreated scintillation points, int max iteration for PMT hit search
+    def plot_scint(self, scint, photon_pos, input_time, *arg):
+        # Handle arguments
+        Tz = 0; T_width = 0; T_radius = 0; PMT_radius = 0 # intialize main variables
+        if scint == 1:
+            Tz = self.T1z; T_width = self.T1_width; PMTx = self.xPMT1; PMTy = self.yPMT1 
+            T_radius = self.T1_radius; PMT_radius = self.PMT1_radius
+        elif scint == 4:
+            Tz = self.T4z; T_width = self.T4_width; PMTx = self.xPMT4; PMTy = self.yPMT4 
+            T_radius = self.T4_radius; PMT_radius = self.PMT4_radius
+        else:
+            print("Incorrect scint number. Use 1 or 4")
+            return
+        rep = 1
         if arg and arg[0] == True:
-            print("Generate random!")
+            print("Generate random particle!")
             (time_i, point_i, _) = self.particle_task(1)
-            time_i = time_i[point_i[:,2] >= self.T1z]
-            point_i = point_i[point_i[:,2] >= self.T1z]
+            time_i = time_i[(point_i[:,2] >= Tz) & (point_i[:,2] < (Tz+T_width))]
+            point_i = point_i[(point_i[:,2] >= Tz) & (point_i[:,2] < (Tz+T_width))]
+            print(f"Array Length: {len(point_i):d}")
             i = 0
             if (len(arg) > 1) and (arg[1] < len(point_i)):
-                i = arg[1]
+                print(f"Chosen index: {arg[1]:d}")
+                i = int(arg[1])
+            if (len(arg) > 2) and (arg[2] < 20000):
+                print(f"Max iter for PMT hit search: {arg[2]:d}")
+                rep = int(arg[2])
             photon_pos = point_i[i]; input_time = time_i[i]
-        hit_PMT, _, tracks = self.scintillator_monte_carlo(photon_pos, notabsorbed=True, scint_radius=self.T1_radius, 
-                                                        scint_plane=np.array([self.T1z,self.T1z+self.T1_width]), scint_width=self.T1_width, 
-                                                        light_guide_planes=[self.T1_radius,-self.T1_radius], 
-                                                        pmt_center=[self.T1_radius-4*0.5,-self.T1_radius+4*0.5,self.T1z], pmt_radius=self.PMT1_radius,
-                                                        N_max=self.max_simulated_reflections, dt=input_time, keepdata=True)
+            print(f"pos=({photon_pos[0]:.2f},{photon_pos[1]:.2f},{photon_pos[2]:.2f}) at t={input_time:.2f}ps")
+        j = 0
+        tracks = []
+        # Search for PMT_hit (or up to limit rep)
+        while j < rep:
+            hit_PMT, _, tracks = self.scintillator_monte_carlo(photon_pos, notabsorbed=True, scint_radius=T_radius, 
+                                                            scint_plane=np.array([Tz,Tz+T_width]), scint_width=T_width, 
+                                                            light_guide_planes=[T_radius,-T_radius], 
+                                                            pmt_center=[T_radius-4*0.5,-T_radius+4*0.5,Tz], pmt_radius=PMT_radius,
+                                                            N_max=self.max_simulated_reflections, dt=input_time, keepdata=True)
+            j += 1
+            if hit_PMT:
+                break
+        print("Returned iteration",j)
         import matplotlib.pyplot as plt
         fig = plt.figure(figsize=(6,6))
         ax = fig.add_subplot(111,projection='3d')
-        X, Y, Z = self.data_for_cylinder_along_z(0,0,self.T1_radius,self.T1_width,self.T1z)
-        PMTxyz = [self.T1_radius-4*0.5,-self.T1_radius+4*0.5,self.T1z]
-        PMT_X, PMT_Y, PMT_Z = self.data_for_cylinder_along_z(PMTxyz[0],PMTxyz[1],self.PMT1_radius,0.5,PMTxyz[2]-0.5)
+        # Create plot data
+        X, Y, Z = self.data_for_cylinder_along_z(0,0,T_radius,T_width,Tz, 0, 3*np.pi/2)
+        Xlg1, Zlg1 = np.meshgrid(np.linspace(0,T_radius,10),np.linspace(Tz,Tz+T_width,10))
+        Ylg1 = -np.ones((10,10))*T_radius
+        Ylg2, Zlg2 = np.meshgrid(np.linspace(0,-T_radius,10),np.linspace(Tz,Tz+T_width,10))
+        Xlg2 = np.ones((10,10))*T_radius
+        PMTxyz = [T_radius-4*0.5,-T_radius+4*0.5,Tz]
+        PMT_X, PMT_Y, PMT_Z = self.data_for_cylinder_along_z(PMTxyz[0],PMTxyz[1],PMT_radius,0.5,PMTxyz[2]-0.5, 0, 2*np.pi)
+        # Plot data
+        ax.plot_wireframe(Xlg1, Ylg1, Zlg1, alpha=0.2, color='C0')
+        ax.plot_wireframe(Xlg2, Ylg2, Zlg2, alpha=0.2, color='C0')
         ax.plot_wireframe(X, Y, Z, alpha=0.2)
         ax.plot_wireframe(PMT_X, PMT_Y, PMT_Z, alpha=0.2, color='purple')
         ax.scatter(photon_pos[0],photon_pos[1],photon_pos[2], color='red', marker='o')
+        ax.scatter(PMTx, PMTy, Tz, color='red', marker='o')
         ax.quiver(tracks[:,0],tracks[:,1],tracks[:,2], tracks[:,3], tracks[:,4],tracks[:,5], length=1, edgecolor='k', facecolor='black', linewidth=1.5)
         ax.plot(tracks[:,0],tracks[:,1],tracks[:,2], alpha=0.5, color='C1', marker='.')
-        ax.text(0.9,0.9,0.9, f'hitPMT1? {hit_PMT}')
+        ax.text(photon_pos[0],photon_pos[1],photon_pos[2], f'hitPMT1? {hit_PMT}')
+        # Fix axes
         ax.grid(True)
         ax.set_xlabel('x [cm]')
         ax.set_ylabel('y [cm]')
         ax.set_zlabel('z [cm]')
-        ax.set_zlim([self.T1z-0.5,self.T1z+1+0.5])
-        ax.set_ylim([-self.T1_radius,self.T1_radius])
-        ax.set_xlim([-self.T1_radius,self.T1_radius])
+        ax.set_zlim([Tz-0.5,Tz+T_width+0.5])
+        ax.set_ylim([-T_radius,T_radius])
+        ax.set_xlim([-T_radius,T_radius])
         ax.view_init(elev=90, azim=-90, roll=0)
         plt.show()
+
+
+
+
 if __name__ == '__main__':
     sim = Simulation()
-    sim.artificial_gain = 3
+    # sim.plot_scint(1,[0,0,0],1,True,100,1000)
+    # sim.artificial_gain = 3
     sim.run(5)
     sim.to_csv()
