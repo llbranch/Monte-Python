@@ -39,7 +39,7 @@ class Simulation:
         # y2PMT1=8.*np.sin(np.radians(-53.72))*2.54 For test
         self.n_dynodes = 8
         self.V = np.linspace(150,850,self.n_dynodes)
-        # V = [150,300,350,600,750,850]
+        # self.V = [150,300,350,600,750,850]
         self.E_per_electron = 20
         self.QE = 1 #0.23
         self.t_initial = 0 #ps
