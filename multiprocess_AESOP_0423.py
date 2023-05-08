@@ -434,6 +434,7 @@ class Simulation:
                 fill = pd.DataFrame(fill_data, columns=['time','current'])
                 df = pd.concat([fill, df], ignore_index=True).sort_values(by=['time']).reset_index(drop=True)
                 df['time'] = df['time']/1e12
+                df = df[['time', 'current']]
                 df.to_csv('monte_carlo_input'+str(self.num_particles)+'ch'+str(ch)+'_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt', float_format='%.13f', header=False, index=False, sep=' ')
                 print(df)
         print("Done!")
@@ -530,6 +531,6 @@ class Simulation:
 if __name__ == '__main__':
     sim = Simulation()
     # sim.plot_scint(1,[0,0,0],1,True,100,1000)
-    # sim.artificial_gain = 3
+    sim.artificial_gain = 3
     sim.run(5)
     sim.to_csv()
