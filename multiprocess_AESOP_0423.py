@@ -52,7 +52,8 @@ class Simulation:
         self.max_simulated_reflections = 8
         self.pmt_electron_travel_time = 0 # approx 16 ns
         self.artificial_gain = 1 # gain factor
-        self.seperation_time = 1e6 # ps
+        self.pr_absorption = 0.8 # probability
+        self.seperation_time = 1e2 # ps 
         self.output_bin_width = 100 # ps
         self.num_particles = 1
         
@@ -165,7 +166,7 @@ class Simulation:
         if np.random.random() < ((Rs+Rp)/2):            # if random chance is high enough reflect !
             return self.normalize(u_r), True                 # return full internal reflection and not absorbed is True
                                                         # else photon is transmitted to white paint
-        elif np.random.random() < 0.80:                 # does it get absorbed? change probability when you get more data
+        elif np.random.random() < self.pr_absorption:                 # does it get absorbed? change probability when you get more data
             return self.normalize(u_r), False                # not absorbed is False
         else:                                           # no it didn't get absorbed!
             theta_new = random.uniform(0,2*np.pi)       # new theta direction of photon
@@ -439,6 +440,46 @@ class Simulation:
                 print(df)
         print("Done!")
     
+    def ltspice(self):
+        import os
+        from PyLTSpice import SimCommander, RawRead
+        # import matplotlib.pyplot as plt
+        # Make the .net file called a netlist by opening file first
+        LTC = 0
+        if os.name == 'posix':
+            LTC = SimCommander("PHAReduced.net")
+        else:
+            LTC = SimCommander("PHAReduced.asc")
+        filename_ch1 = os.path.abspath('monte_carlo_input'+str(self.num_particles)+'ch1_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt')
+        filename_ch4 = os.path.abspath('monte_carlo_input'+str(self.num_particles)+'ch4_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt')
+        for filename in [filename_ch1,filename_ch4]:
+            print('PWL file='+str(filename))
+            LTC.set_element_model('I1', 'PWL file='+str(filename))
+            # print(LTC.get_component_info('I1')) # check if correctly set
+            LTC.run()
+            LTC.wait_completion()
+            print('Successful/Total Simulations: ' + str(LTC.okSim) + '/' + str(LTC.runno))
+            # Now read the output
+            LTR = RawRead("PHAReduced.raw")
+            # print(LTR.get_trace_names()) # check the outputs
+            # print(LTR.get_raw_property()) # what properies does the simualtion have
+            t = LTR.get_trace('time').get_wave()  # get trace gets the output waveform, get wave retrieves data from waveform object
+            compOut = LTR.get_trace('V(compout)').get_wave()
+            df = pd.DataFrame({'t':t,'V':compOut}).sort_values(by='t') # input ndarrays into DataFrame
+            print(df)
+            # plt.plot(df['t'],df['V'])
+            # plt.show()
+
+
+            ######
+            # WRITE IN THE TOF ANALYSIS CODE HERE
+            ######
+
+
+        return
+
+
+
     #############################
     # DEBUG AND PLOTTING
     #############################
@@ -532,5 +573,7 @@ if __name__ == '__main__':
     sim = Simulation()
     # sim.plot_scint(1,[0,0,0],1,True,100,1000)
     sim.artificial_gain = 3
-    sim.run(5)
-    sim.to_csv()
+    sim.num_particles = 5 
+    # sim.run(5)
+    # sim.to_csv()
+    sim.ltspice()
