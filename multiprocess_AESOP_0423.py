@@ -440,35 +440,97 @@ class Simulation:
                 print(df)
         print("Done!")
     
+    """
+      Alternate ToF Method Assuming Seperation Width and Known # of Particles
+      Uses rising edge time to compare for Time-of-Flight calculations like CMOS chip
+      !!
+      WORK IN PROGRESS
+      !!
+    """
+    def time_at_thresh(self, t, V, sep, num, thresh):
+        import matplotlib.pyplot as plt
+        out = np.zeros(num)
+        grad = np.gradient(V) # find gradients on all data
+        limit = (grad > 0) & (grad >= 0.1) # positive slope bigger than 0.1
+        for i in range(num): # for number of particles we expect
+            limit2 = (t > (i*sep/4 - sep/4)) & (t < (i*sep/4 + sep/4)) # check windows of time defined by seperation sep
+            times = t[limit & limit2]
+            Voltages = t[limit & limit2]
+            plt.plot(t[limit2],V[limit2])
+            plt.show()
+            if len(times) < 1 or len(Voltages) < 1: # if no particle here then skip
+                continue
+            m, b = np.polyfit(times,Voltages, deg=1) # find linear fit
+            # if deg=1 returns two params slope m and y-intercept b
+            # now use slope and intercept to solve for x value given our mid value y
+            # y = mx + b  --> x = (y - b) / m
+            out[i] = (thresh - b) / m
+        return out
+
+    def TOF_finalize(self,tofch1, tofch4, num):
+        out = []
+        for i in range(num):
+            if (tofch1[i] == 0) or (tofch4[i] == 0):
+                continue
+            out.append(abs(tofch1[i] - tofch4[i])) # calculate ToF
+        return np.array(out)
+    
+    """LTSpice Command to Analyze, Simulate and Calculate TOF"""
     def ltspice(self):
+        print("\n##################################")
+        print("Running LTSpice on each channel...")
+        print("###################################\n")
         import os
-        from PyLTSpice import SimCommander, RawRead
-        # import matplotlib.pyplot as plt
-        # Make the .net file called a netlist by opening file first
-        LTC = 0
-        if os.name == 'posix':
-            LTC = SimCommander("PHAReduced.net")
-        else:
-            LTC = SimCommander("PHAReduced.asc")
+        from PyLTSpice import SimCommander, RawRead # Use version 3.1 by pip3 install PyLTSpice==3.1
+        import matplotlib.pyplot as plt
+        # Make the .net file (netlist) by opening file first then saving a seperate text file
+        LTC = SimCommander("PHAReduced_sim.net")
+        # When running this file, two LTSpice libaries must be in same folder location:
+        # LTC1.lib and LTC7.lib
+        ch1ToF = 0 # declare for scope
+        ch4ToF = 0 # declare for scope
+        # Save the filenames of the inputs to LTSpice (Need to be Same Day and # of particles)
+        # 'monte_carlo_input<X>ch1_<MM>_<DD>_<YYYY>.txt' is the format where X is # of particles if manual input is desired
+        # filename_ch1 = os.path.abspath('monte_carlo_input<X>ch1_<MM>_<DD>_<YYYY>.txt')
         filename_ch1 = os.path.abspath('monte_carlo_input'+str(self.num_particles)+'ch1_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt')
         filename_ch4 = os.path.abspath('monte_carlo_input'+str(self.num_particles)+'ch4_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt')
-        for filename in [filename_ch1,filename_ch4]:
+        for filename,strname in zip([filename_ch1,filename_ch4],['ch1','ch4']):
             print('PWL file='+str(filename))
             LTC.set_element_model('I1', 'PWL file='+str(filename))
-            # print(LTC.get_component_info('I1')) # check if correctly set
-            LTC.run()
+            # print(LTC.get_component_info('I1')) # to check if correctly set
+            LTC.run(run_filename=f'PHAReduced_{strname}.net')
             LTC.wait_completion()
             print('Successful/Total Simulations: ' + str(LTC.okSim) + '/' + str(LTC.runno))
             # Now read the output
-            LTR = RawRead("PHAReduced.raw")
+            LTR = RawRead(f"PHAReduced_{strname}.raw")
             # print(LTR.get_trace_names()) # check the outputs
-            # print(LTR.get_raw_property()) # what properies does the simualtion have
-            t = LTR.get_trace('time').get_wave()  # get trace gets the output waveform, get wave retrieves data from waveform object
+            # print(LTR.get_raw_property()) # what properies does the simulation have
+            # get trace gets the output waveform, get wave retrieves data from waveform object
+            t = LTR.get_trace('time').get_wave() 
             compOut = LTR.get_trace('V(compout)').get_wave()
-            df = pd.DataFrame({'t':t,'V':compOut}).sort_values(by='t') # input ndarrays into DataFrame
-            print(df)
-            # plt.plot(df['t'],df['V'])
-            # plt.show()
+            # input ndarrays into DataFrame and fix weird negative time values
+            df = pd.DataFrame({'t':np.abs(t),'V':compOut}).sort_values(by='t')
+            # if strname == 'ch1':
+            #     ch1ToF = self.time_at_thresh(df['t'],df['V'], self.seperation_time/1e-12, self.num_particles, 1.5)
+            # else:
+            #     ch4ToF = self.time_at_thresh(df['t'],df['V'], self.seperation_time/1e-12, self.num_particles, 1.5)
+            # Clean up extra files
+            os.remove(f"PHAReduced_{strname}.log")
+            os.remove(f"PHAReduced_{strname}.op.raw")
+            os.remove(f"PHAReduced_{strname}.raw")
+            os.remove(f"PHAReduced_{strname}.net")
+        
+        # Make final calulcation all time of flight data
+        # print(f"Length of ch1: {len(ch1ToF)}")
+        # print(ch1ToF)
+        # print(f"Length of ch4: {len(ch4ToF)}")
+        # print(ch4ToF)
+        # FinalToF = self.TOF_finalize(ch1ToF,ch4ToF, self.num_particles)
+        # print(FinalToF)
+
+
+        # Remove LTSpice Object
+        del LTR
 
 
             ######
@@ -572,7 +634,7 @@ class Simulation:
 if __name__ == '__main__':
     sim = Simulation()
     # sim.plot_scint(1,[0,0,0],1,True,100,1000)
-    sim.artificial_gain = 3
+    sim.artificial_gain = 2 # was 3
     sim.num_particles = 5 
     # sim.run(5)
     # sim.to_csv()
