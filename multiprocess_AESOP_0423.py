@@ -55,7 +55,8 @@ class Simulation:
         self.pr_absorption = 0.8 # probability
         self.seperation_time = 1e2 # ps 
         self.output_bin_width = 100 # ps
-        self.num_particles = 1
+        self.num_particles = 1 # Muons
+        self.CMOS_thresh = 1.5 # V
         
         # Introduction Print Statement
         print("######################################################")
@@ -447,42 +448,61 @@ class Simulation:
       WORK IN PROGRESS
       !!
     """
-    def time_at_thresh(self, t, V, sep, num, thresh):
-        import matplotlib.pyplot as plt
+    def time_at_thresh(self, rawtime, rawVoltage, num, thresh, ch):
         out = np.zeros(num)
-        grad = np.gradient(V) # find gradients on all data
+        grad = np.gradient(rawVoltage) # find gradients on all data
         limit = (grad > 0) & (grad >= 0.1) # positive slope bigger than 0.1
-        for i in range(num): # for number of particles we expect
-            limit2 = (t > (i*sep/4 - sep/4)) & (t < (i*sep/4 + sep/4)) # check windows of time defined by seperation sep
-            times = t[limit & limit2]
-            Voltages = t[limit & limit2]
-            plt.plot(t[limit2],V[limit2])
-            plt.show()
-            if len(times) < 1 or len(Voltages) < 1: # if no particle here then skip
-                continue
-            m, b = np.polyfit(times,Voltages, deg=1) # find linear fit
-            # if deg=1 returns two params slope m and y-intercept b
-            # now use slope and intercept to solve for x value given our mid value y
-            # y = mx + b  --> x = (y - b) / m
-            out[i] = (thresh - b) / m
-        return out
+        dtime = rawtime[limit]
+        dtvoltage = rawVoltage[limit]
+        tdiff = np.diff(dtime)
+        condition = tdiff > 1e-7 # check if next point is 100ns away
+        condition2 = tdiff > 1.5e-6 # check if missing points with 1500ns gap
+        count = 0
+        start_index = 0
+        for i in range(len(tdiff)): # for number of particles we expect
+            if count > num-1:
+                return np.array(out)
+            if condition[i]: # if condition is true at index i
+                times = dtime[start_index:i] # take snippet of time from starting index flag to index i
+                Voltages = dtvoltage[start_index:i]
+                start_index = i+1 # reset flag to next position
+                if len(times) < 1 or len(Voltages) < 1: # if no particle here then skip
+                    continue
+                m, b = np.polyfit(times,Voltages, deg=1) # find linear fit
+                # if deg=1 returns two params slope m and y-intercept b
+                # now use slope and intercept to solve for x value given our mid value y
+                # y = mx + b  --> x = (y - b) / m
+                out[count] = (thresh - b) / m
+                count +=1 # count particle!
+                if condition2[i]:
+                    count +=1
+            
+        print("Ch",ch,"counted",count,"particles!")
+        if count < num: 
+            print(f"Note: Counted less particles than the expected {num}")
+            print("Check LTSpice that all particles were simulated.")
+        return np.array(out)
 
-    def TOF_finalize(self,tofch1, tofch4, num):
+    def TOF_finalize(self, tofch1, tofch4, num):
+        print("ch1 length", len(tofch1), "largest time diff", "%.5e" % max(np.diff(tofch1)), "zeros", (tofch1 == 0.0).sum())
+        print(tofch1)
+        print("ch4 length", len(tofch4), "largest time diff", "%.5e" % max(np.diff(tofch4)), "zeros", (tofch4 == 0.0).sum())
+        print(tofch4)
         out = []
         for i in range(num):
             if (tofch1[i] == 0) or (tofch4[i] == 0):
                 continue
-            out.append(abs(tofch1[i] - tofch4[i])) # calculate ToF
+            out.append(abs(tofch1[i] - tofch4[i]))
+        print("finished calculating,", len(out), "particles")
         return np.array(out)
     
     """LTSpice Command to Analyze, Simulate and Calculate TOF"""
-    def ltspice(self):
+    def ltspice(self, filedate=None, filenum=None):
         print("\n##################################")
         print("Running LTSpice on each channel...")
         print("###################################\n")
         import os
         from PyLTSpice import SimCommander, RawRead # Use version 3.1 by pip3 install PyLTSpice==3.1
-        import matplotlib.pyplot as plt
         # Make the .net file (netlist) by opening file first then saving a seperate text file
         LTC = SimCommander("PHAReduced_sim.net")
         # When running this file, two LTSpice libaries must be in same folder location:
@@ -492,11 +512,18 @@ class Simulation:
         # Save the filenames of the inputs to LTSpice (Need to be Same Day and # of particles)
         # 'monte_carlo_input<X>ch1_<MM>_<DD>_<YYYY>.txt' is the format where X is # of particles if manual input is desired
         # filename_ch1 = os.path.abspath('monte_carlo_input<X>ch1_<MM>_<DD>_<YYYY>.txt')
-        filename_ch1 = os.path.abspath('monte_carlo_input'+str(self.num_particles)+'ch1_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt')
-        filename_ch4 = os.path.abspath('monte_carlo_input'+str(self.num_particles)+'ch4_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt')
+        date = datetime.now().strftime('%m_%d_%Y') # Defaults
+        num_part = self.num_particles
+        if filedate is not None: # Take input given correct format
+            date = filedate
+        if filenum is not None: # Take input given correct integer number
+            num_part = int(filenum)
+        filename_ch1 = os.path.abspath('monte_carlo_input'+str(num_part)+'ch1_'+str(date)+'.txt')
+        filename_ch4 = os.path.abspath('monte_carlo_input'+str(num_part)+'ch4_'+str(date)+'.txt')
         for filename,strname in zip([filename_ch1,filename_ch4],['ch1','ch4']):
             print('PWL file='+str(filename))
             LTC.set_element_model('I1', 'PWL file='+str(filename))
+            LTC.add_instructions("; Simulation settings", f".tran 0 {self.num_particles}.5u 0 0.002u") # fix this to adjust for time seperation
             # print(LTC.get_component_info('I1')) # to check if correctly set
             LTC.run(run_filename=f'PHAReduced_{strname}.net')
             LTC.wait_completion()
@@ -510,10 +537,12 @@ class Simulation:
             compOut = LTR.get_trace('V(compout)').get_wave()
             # input ndarrays into DataFrame and fix weird negative time values
             df = pd.DataFrame({'t':np.abs(t),'V':compOut}).sort_values(by='t')
-            # if strname == 'ch1':
-            #     ch1ToF = self.time_at_thresh(df['t'],df['V'], self.seperation_time/1e-12, self.num_particles, 1.5)
-            # else:
-            #     ch4ToF = self.time_at_thresh(df['t'],df['V'], self.seperation_time/1e-12, self.num_particles, 1.5)
+            df.to_csv('output'+str(num_part)+'ch'+strname+'_'+str(date)+'.txt', header=False, index=False)
+            # implement csv creation!
+            if strname == 'ch1':
+                ch1ToF = self.time_at_thresh(df['t'],df['V'], self.num_particles, self.CMOS_thresh, 1)
+            else:
+                ch4ToF = self.time_at_thresh(df['t'],df['V'], self.num_particles, self.CMOS_thresh, 4)
             # Clean up extra files
             os.remove(f"PHAReduced_{strname}.log")
             os.remove(f"PHAReduced_{strname}.op.raw")
@@ -521,27 +550,18 @@ class Simulation:
             os.remove(f"PHAReduced_{strname}.net")
         
         # Make final calulcation all time of flight data
-        # print(f"Length of ch1: {len(ch1ToF)}")
-        # print(ch1ToF)
-        # print(f"Length of ch4: {len(ch4ToF)}")
-        # print(ch4ToF)
-        # FinalToF = self.TOF_finalize(ch1ToF,ch4ToF, self.num_particles)
-        # print(FinalToF)
-
+        self.FinalToF = self.TOF_finalize(ch1ToF,ch4ToF, self.num_particles)
+        print(self.FinalToF)
 
         # Remove LTSpice Object
         del LTR
-
-
-            ######
-            # WRITE IN THE TOF ANALYSIS CODE HERE
-            ######
-
-
         return
 
-
-
+    def plotToF(self):
+        import matplotlib.pyplot as plt
+        plt.hist(self.FinalToF, bins=50)
+        plt.show()
+        return
     #############################
     # DEBUG AND PLOTTING
     #############################
@@ -635,7 +655,8 @@ if __name__ == '__main__':
     sim = Simulation()
     # sim.plot_scint(1,[0,0,0],1,True,100,1000)
     sim.artificial_gain = 2 # was 3
-    sim.num_particles = 5 
+    sim.num_particles = 8000
     # sim.run(5)
     # sim.to_csv()
-    sim.ltspice()
+    sim.ltspice(filedate='05_08_2023',filenum=8000)
+    sim.plotToF()
