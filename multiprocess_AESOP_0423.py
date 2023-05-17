@@ -444,19 +444,15 @@ class Simulation:
     """
       Alternate ToF Method Assuming Seperation Width and Known # of Particles
       Uses rising edge time to compare for Time-of-Flight calculations like CMOS chip
-      !!
-      WORK IN PROGRESS
-      !!
     """
     def time_at_thresh(self, rawtime, rawVoltage, num, thresh, ch):
-        out = np.zeros(num)
+        out = []
         grad = np.gradient(rawVoltage) # find gradients on all data
         limit = (grad > 0) & (grad >= 0.1) # positive slope bigger than 0.1
         dtime = rawtime[limit]
         dtvoltage = rawVoltage[limit]
         tdiff = np.diff(dtime)
         condition = tdiff > 1e-7 # check if next point is 100ns away
-        condition2 = tdiff > 1.5e-6 # check if missing points with 1500ns gap
         count = 0
         start_index = 0
         for i in range(len(tdiff)): # for number of particles we expect
@@ -472,10 +468,8 @@ class Simulation:
                 # if deg=1 returns two params slope m and y-intercept b
                 # now use slope and intercept to solve for x value given our mid value y
                 # y = mx + b  --> x = (y - b) / m
-                out[count] = (thresh - b) / m
+                out.append( (thresh - b) / m )
                 count +=1 # count particle!
-                if condition2[i]:
-                    count +=1
             
         print("Ch",ch,"counted",count,"particles!")
         if count < num: 
@@ -483,18 +477,24 @@ class Simulation:
             print("Check LTSpice that all particles were simulated.")
         return np.array(out)
 
-    def TOF_finalize(self, tofch1, tofch4, num):
-        print("ch1 length", len(tofch1), "largest time diff", "%.5e" % max(np.diff(tofch1)), "zeros", (tofch1 == 0.0).sum())
-        print(tofch1)
-        print("ch4 length", len(tofch4), "largest time diff", "%.5e" % max(np.diff(tofch4)), "zeros", (tofch4 == 0.0).sum())
-        print(tofch4)
+    def ToF_finalize(self, tofch1, tofch4, time_limit=50e-9):
+        # print("ch1 length", len(tofch1), "largest time diff", "%.5e" % max(np.diff(tofch1)), "zeros", (tofch1 == 0.0).sum())
+        # print("ch4 length", len(tofch4), "largest time diff", "%.5e" % max(np.diff(tofch4)), "zeros", (tofch4 == 0.0).sum())
         out = []
-        for i in range(num):
-            if (tofch1[i] == 0) or (tofch4[i] == 0):
-                continue
-            out.append(abs(tofch1[i] - tofch4[i]))
+        i = 0; j = 0
+        while (i < len(tofch1)) and (j < len(tofch4)):
+            check = tofch1[i] - tofch4[j]
+            if abs(check) < time_limit:
+                out.append(abs(check))
+                i+=1
+                j+=1
+            elif check > 0:
+                j+=1
+            else: #check < 0
+                i+=1
         print("finished calculating,", len(out), "particles")
-        return np.array(out)
+        self.FinalToF = np.array(out)
+        # return np.array(out)
     
     """LTSpice Command to Analyze, Simulate and Calculate TOF"""
     def ltspice(self, filedate=None, filenum=None):
@@ -537,29 +537,79 @@ class Simulation:
             compOut = LTR.get_trace('V(compout)').get_wave()
             # input ndarrays into DataFrame and fix weird negative time values
             df = pd.DataFrame({'t':np.abs(t),'V':compOut}).sort_values(by='t')
-            df.to_csv('output'+str(num_part)+'ch'+strname+'_'+str(date)+'.txt', header=False, index=False)
+            df.to_csv('output'+str(num_part)+strname+'_'+str(date)+'.txt', header=False, index=False)
             # implement csv creation!
-            if strname == 'ch1':
-                ch1ToF = self.time_at_thresh(df['t'],df['V'], self.num_particles, self.CMOS_thresh, 1)
-            else:
-                ch4ToF = self.time_at_thresh(df['t'],df['V'], self.num_particles, self.CMOS_thresh, 4)
             # Clean up extra files
             os.remove(f"PHAReduced_{strname}.log")
             os.remove(f"PHAReduced_{strname}.op.raw")
             os.remove(f"PHAReduced_{strname}.raw")
             os.remove(f"PHAReduced_{strname}.net")
-        
+            # Remove LTSpice Object
+            del LTR
+       
+    """ToF load LTSpice output function and call time_at_thresh and ToF_finalize""" 
+    def calc_ToF(self, filedate=None, filenum=None):
+        import os
         # Make final calulcation all time of flight data
-        self.FinalToF = self.TOF_finalize(ch1ToF,ch4ToF, self.num_particles)
-        print(self.FinalToF)
+        date = datetime.now().strftime('%m_%d_%Y') # Defaults
+        num_part = self.num_particles
+        if filedate is not None: # Take input given correct format
+            date = filedate
+        if filenum is not None: # Take input given correct integer number
+            num_part = int(filenum)
+        filename_ch1 = os.path.abspath('output'+str(num_part)+'ch1_'+str(date)+'.txt')
+        filename_ch4 = os.path.abspath('output'+str(num_part)+'ch4_'+str(date)+'.txt')
+        ch1 = pd.read_csv(filename_ch1, names=['t', 'V'], sep=',')
+        ch4 = pd.read_csv(filename_ch4, names=['t', 'V'], sep=',')
+        ch1ToF = self.time_at_thresh(ch1['t'],ch1['V'], self.num_particles, self.CMOS_thresh, 1)
+        ch4ToF = self.time_at_thresh(ch4['t'],ch4['V'], self.num_particles, self.CMOS_thresh, 4)
+        self.ToF_finalize(ch1ToF,ch4ToF) # Calculated correct time of flight
+        print(pd.DataFrame(self.FinalToF).describe())
 
-        # Remove LTSpice Object
-        del LTR
-        return
-
+    """ToF save result data to a csv file"""
+    def save_ToF(self, filename=None):
+        # Default
+        date = datetime.now().strftime('%m_%d_%Y')
+        num_total = self.num_particles
+        counted = len(self.FinalToF)
+        file = 'result_'+str(counted)+'_of_'+str(num_total)+'_'+str(date)+'.txt'
+        if filename is not None: # if special name use it
+            file = filename
+        # Output using DataFrame format and column title
+        pd.DataFrame({'Time-of-Flight [s]':self.FinalToF}).to_csv(file, index=False)
+    
+    """
+    Loads ToF onto FinalToF ndarray and will append if there already exists an array
+    Unless replace=True 
+    """
+    def load_ToF(self, filename, replace=False):
+        import os
+        # Default
+        date = datetime.now().strftime('%m_%d_%Y')
+        num_total = self.num_particles
+        counted = len(self.FinalToF)
+        file = 'result_'+str(counted)+'_of_'+str(num_total)+'_'+str(date)+'.txt'
+        if filename is not None: # if special name use it
+            file = filename
+        # Check for path errors
+        if os.path.exists(file) is False:
+            print("Path to result file below doesn't exist!")
+            print(file)
+            print("Please try again with correct path to result file")
+        # Load data
+        new_ToF_data = pd.read_csv(self.FinalToF, names='Time-of-Flight [s]')
+        # If require to replace, replace
+        if replace is not False:
+            self.FinalToF = new_ToF_data.to_numpy()
+        # Else append to data
+        self.FinalToF = np.append(self.FinalToF, new_ToF_data.to_numpy())
     def plotToF(self):
         import matplotlib.pyplot as plt
+        plt.title(f'TOF, Total Points {len(self.FinalToF)}')
         plt.hist(self.FinalToF, bins=50)
+        plt.axvline(np.mean(self.FinalToF), label=f'$\mu$={np.mean(self.FinalToF):.2e}', color='C1')
+        plt.grid()
+        plt.legend()
         plt.show()
         return
     #############################
@@ -658,5 +708,7 @@ if __name__ == '__main__':
     sim.num_particles = 8000
     # sim.run(5)
     # sim.to_csv()
-    sim.ltspice(filedate='05_08_2023',filenum=8000)
+    # sim.ltspice(filedate='05_08_2023',filenum=8000)
+    sim.calc_ToF(filedate='05_08_2023',filenum=8000)
+    sim.save_ToF()
     sim.plotToF()
