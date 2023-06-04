@@ -22,7 +22,7 @@ class Simulation:
         self.q = 1.60217663e-19 # charge of electron columbs
         # CONSTRAINT n_1 <= n_2
         self.n_1 = 1.000293 # Sample index of refraction of air
-        self.n_2 = 1.85 # 1.85 for NaI
+        self.n_2 = 1.58 # 1.58 for EJ-200
         self.t_rise = 800 #ps 
         self.T3z=0 #cm is the bottom of T3
         self.T1z=33.782 #cm is the bottom of T1
@@ -48,15 +48,16 @@ class Simulation:
         self.T4_width = 1 #cm
         self.mean_free_path_scints = 0.00024 #cm
         self.photons_produced_per_MeV = 10 # electrons
-        self.pr_of_scintillation = 0.8 
-        self.max_simulated_reflections = 8
+        self.pr_of_scintillation = 0.8
+        self.max_simulated_reflections = 16
         self.pmt_electron_travel_time = 0 # approx 16 ns
         self.artificial_gain = 1 # gain factor
-        self.pr_absorption = 0.8 # probability
+        self.pr_absorption = 0.1 # probability of white paint absorbing
         self.seperation_time = 1e2 # ps 
         self.output_bin_width = 100 # ps
         self.num_particles = 1 # Muons
         self.CMOS_thresh = 1.5 # V
+        self.reemission_angle_factor = 0.9 # range [0,1] --> cone from [-pi,pi]
         
         # Introduction Print Statement
         print("######################################################")
@@ -145,7 +146,7 @@ class Simulation:
             return dist, PMT_cond
 
     # PSEUDOCODE FOR EACH PHOTON INTERACTION WITH BOUNDARY
-        # if random number X_1 < mean ( Reflectance s_polarization + Reflectance s_polarization ):
+        # if random number X_1 < mean ( Reflectance s_polarization + Reflectance p_polarization ):
             # Reflect
         # else if random number X_2 < absorbption into scintillator boundary probability:
             # Absorbed and exit current particle simulation
@@ -155,7 +156,6 @@ class Simulation:
             # into scintillator with random direction given by random angles Phi_3, Theta_3
             # with constraint of z coordinate entering
     def photon_interaction(self, o, u, n, notabsorbed, scint_plane):
-        u_i = u
         u_r = u - 2*np.dot(u, n)*n                      # u_new = u - 2 (u . n)*n
         v = u*-1 if np.dot(u,n) < 0 else u
         theta = np.arcsin(self.mag(np.cross(v,n))/(self.mag(u)*self.mag(n)))
@@ -170,12 +170,11 @@ class Simulation:
         elif np.random.random() < self.pr_absorption:                 # does it get absorbed? change probability when you get more data
             return self.normalize(u_r), False                # not absorbed is False
         else:                                           # no it didn't get absorbed!
-            theta_new = random.uniform(0,2*np.pi)       # new theta direction of photon
-            phi_new = random.uniform(0,np.pi)           # new phi   direction of photon
+            theta_new = random.uniform(-np.pi/2,np.pi/2)       # new theta direction of photon
+            phi_new = random.uniform(-np.pi, np.pi)           # new phi   direction of photon
             new_u = self.normalize(np.array([np.sin(phi_new)*np.cos(theta_new),np.sin(phi_new)*np.sin(theta_new),np.cos(phi_new)]))
-            change_factor = np.random.random()-0.5
-            u_r = u_r + change_factor*new_u
-            return self.normalize(u_r), True                 # new small change in direction (should be random), and not absorbed is True
+            u_r = self.reemission_angle_factor*new_u + n
+            return self.normalize(u_r), True            # new small change in direction (should be random), and not absorbed is True
 
     # Calculate n vector for all planes and surfaces in apparatus
     def n_vec_calculate(self, o, scint_plane, light_guide_planes, corner_center, corner_radius):
@@ -234,9 +233,9 @@ class Simulation:
                 if np.random.random() < prob_scint: photons.append(phot)
                 else: photons.append(0)
                 z = points[-1][2]
-                z_1 = (z+mean_free_path*u[2]).round(round_const)
+                z_1 = (z+mean_free_path*u[2]).round(round_const) # make this just the whole vector calculation
             for Tbottom,Ttop in [(T1_z,T1_z+T1_width),(T4_z,T4_z+T4_width)]:
-                inside_scint = (z_1 <= (Ttop)) & (z_1 >= Tbottom)
+                inside_scint = (z_1 <= (Ttop)) & (z_1 >= Tbottom)  # TODO: Add more conditions for X,Y positions of scintillators including light guides
                 if inside_scint:
                     while inside_scint:
                         t +=  mean_free_path/self.c
@@ -582,12 +581,12 @@ class Simulation:
     Loads ToF onto FinalToF ndarray and will append if there already exists an array
     Unless replace=True 
     """
-    def load_ToF(self, filename, replace=False):
+    def load_ToF(self, filename, replace=True):
         import os
         # Default
         date = datetime.now().strftime('%m_%d_%Y')
         num_total = self.num_particles
-        counted = len(self.FinalToF)
+        counted = self.num_particles
         file = 'result_'+str(counted)+'_of_'+str(num_total)+'_'+str(date)+'.txt'
         if filename is not None: # if special name use it
             file = filename
@@ -597,12 +596,13 @@ class Simulation:
             print(file)
             print("Please try again with correct path to result file")
         # Load data
-        new_ToF_data = pd.read_csv(self.FinalToF, names='Time-of-Flight [s]')
+        new_ToF_data = pd.read_csv(file)
+        print(new_ToF_data)
         # If require to replace, replace
         if replace is not False:
             self.FinalToF = new_ToF_data.to_numpy()
-        # Else append to data
-        self.FinalToF = np.append(self.FinalToF, new_ToF_data.to_numpy())
+        else:
+            self.FinalToF = np.append(self.FinalToF, new_ToF_data.to_numpy())
     def plotToF(self):
         import matplotlib.pyplot as plt
         plt.title(f'TOF, Total Points {len(self.FinalToF)}')
@@ -695,7 +695,7 @@ class Simulation:
         ax.set_zlim([Tz-0.5,Tz+T_width+0.5])
         ax.set_ylim([-T_radius,T_radius])
         ax.set_xlim([-T_radius,T_radius])
-        ax.view_init(elev=90, azim=-90, roll=0)
+        # ax.view_init(elev=90, azim=-90, roll=0)
         plt.show()
 
 
@@ -704,11 +704,13 @@ class Simulation:
 if __name__ == '__main__':
     sim = Simulation()
     # sim.plot_scint(1,[0,0,0],1,True,100,1000)
-    sim.artificial_gain = 2 # was 3
-    sim.num_particles = 8000
+    # sim.plot_scint(4,[0,0,0],1,True,100,1000)
+    # sim.artificial_gain = 2 # was 3
+    # sim.num_particles = 5
     # sim.run(5)
     # sim.to_csv()
     # sim.ltspice(filedate='05_08_2023',filenum=8000)
-    sim.calc_ToF(filedate='05_08_2023',filenum=8000)
-    sim.save_ToF()
+    # sim.calc_ToF(filedate='05_08_2023',filenum=8000)
+    # sim.save_ToF()
+    sim.load_ToF(filename='result_3867_of_8000_05_17_2023.txt')
     sim.plotToF()
