@@ -89,6 +89,15 @@ class Simulation:
     # REDEF NORM FOR READABILITY
     def mag(self, x):
         return np.linalg.norm(x)
+    
+    # LIGHT GUIDE CONDITION
+    def quadrant_sign(self, corner_pt):
+        negatives = 0
+        if corner_pt[0] < 0:
+            negatives = (negatives + 1) % 2
+        if corner_pt[1] < 0:
+            negatives = (negatives + 1) % 2
+        return -1*negatives
 
     # DISTANCE 2-DIM CIRCLE WITH LINE SEGMENT
     # t = -D . ∆ ± √(D . ∆)^2 - |D|^2(|∆|^2 - R^2)
@@ -207,7 +216,7 @@ class Simulation:
         #                Generate photons if random number X_1 < Pr(scintillate)
         #                walk mean free path length and store position if still within scintillator
 
-    def particle_path(self, t, phi_range_deg, T1_z, T1_width, T4_z, T4_width, T1_radius, T4_radius, mean_free_path, photons_per_E, prob_scint):
+    def particle_path(self, t, phi_range_deg, T1_z, T1_width, T4_z, T4_width, T1_radius, T4_radius, T1_corner, T4_corner, mean_free_path, photons_per_E, prob_scint):
         theta = random.uniform(0,2*np.pi)                                                 # random theta in circle above T1
         phi = random.uniform(np.pi-phi_range_deg*np.pi/180/2,np.pi+phi_range_deg*np.pi/180/2) # phi angle pointing in -k given phi range
         maxdist = np.random.random()*T1_radius/2                                          # half the radius of T1
@@ -218,35 +227,40 @@ class Simulation:
         photons = [0]                                                                     # begin photon array
         points = [o]                                                                      # current point 
         times = [t]                                                                       # current t 
-        z = points[-1][2]                                                                 # current z 
-        z_1 = (z+mean_free_path*u[2]).round(round_const)                                  # next z step
+        cur_o = points[-1]                                                                 # current z 
+        next_o = (cur_o+mean_free_path*u).round(round_const)                                  # next z step
         inside_scint = False
-        while z_1 >= T4_z:
+        while next_o[2] >= T4_z:
             if not inside_scint:
-                distT1 = np.abs((T1_z+T1_width - z)/u[2])
-                distT4 = np.abs((T4_z+T4_width - z)/u[2])
-                dist = distT4 if z_1 < T1_z else distT1
+                distT1 = np.abs((T1_z+T1_width - cur_o[2])/u[2])
+                distT4 = np.abs((T4_z+T4_width - cur_o[2])/u[2])
+                dist = distT4 if next_o[2] < T1_z else distT1
+                next_o = (cur_o+dist*u).round(round_const)
+                inside_T1 = ((np.sqrt(np.sum(next_o[0:2]**2)) < T1_radius) | ((next_o[0] < T1_corner[0]) & (next_o[1] > T1_corner[1])))
+                inside_T4 = ((np.sqrt(np.sum(next_o[0:2]**2)) < T4_radius) | ((next_o[0] < T4_corner[0]) & (next_o[1] > T4_corner[1])))
+                inside_scint = inside_T4 if next_o[2] < T1_z else inside_T1
+                if not inside_scint:
+                    continue
                 t +=  dist/self.c                                                               # calculate time in ps passed
                 times.append(t)
-                points.append(points[-1] + dist*u)
+                points.append(next_o)
                 phot = np.random.poisson(photons_per_E)
                 if np.random.random() < prob_scint: photons.append(phot)
                 else: photons.append(0)
-                z = points[-1][2]
-                z_1 = (z+mean_free_path*u[2]).round(round_const) # make this just the whole vector calculation
-            for Tbottom,Ttop in [(T1_z,T1_z+T1_width),(T4_z,T4_z+T4_width)]:
-                inside_scint = (z_1 <= (Ttop)) & (z_1 >= Tbottom)  # TODO: Add more conditions for X,Y positions of scintillators including light guides
-                if inside_scint:
-                    while inside_scint:
-                        t +=  mean_free_path/self.c
-                        times.append(t)
-                        points.append(points[-1] + mean_free_path*u)
-                        phot = np.random.poisson(photons_per_E)
-                        if np.random.random() < prob_scint: photons.append(phot)
-                        else: photons.append(0)
-                        z = points[-1][2]
-                        z_1 = (z+mean_free_path*u[2]).round(round_const)
-                        inside_scint = (z_1 <= (Ttop)) & (z_1 >= Tbottom)
+                cur_o = points[-1]                                                                 # current z 
+                next_o = (cur_o+mean_free_path*u).round(round_const)  # make this just the whole vector calculation
+            for Tbottom,Ttop,Tradius,Tcorner in [(T1_z,T1_z+T1_width,T1_radius,T1_corner),(T4_z,T4_z+T4_width,T4_radius,T4_corner)]:
+                inside_scint = (next_o[2] <= (Ttop)) & (next_o[2] >= Tbottom) & ((np.sqrt(np.sum(next_o[0:2]**2)) < Tradius) | ((next_o[0] < Tcorner[0]) & (next_o[1] > Tcorner[1])))
+                while inside_scint:
+                    t +=  mean_free_path/self.c
+                    times.append(t)
+                    points.append(cur_o+mean_free_path*u)
+                    phot = np.random.poisson(photons_per_E)
+                    if np.random.random() < prob_scint: photons.append(phot)
+                    else: photons.append(0)
+                    cur_o = points[-1]                                                                 # current z 
+                    next_o = (cur_o+mean_free_path*u).round(round_const)
+                    inside_scint = (next_o[2] <= (Ttop)) & (next_o[2] >= Tbottom) & ((np.sqrt(np.sum(next_o[0:2]**2)) < Tradius) | ((next_o[0] < Tcorner[0]) & (next_o[1] > Tcorner[1])))
         # print(f"time elapsed in scintillators: {np.abs(times[1]-times[-1]):.2f}ps total scintillation points: {len(points[1:])}")
         return np.array(times, dtype=np.float64)[1:], np.array(points, dtype=np.float64)[1:], np.array(photons[1:], dtype=np.float64)
 
@@ -297,7 +311,8 @@ class Simulation:
     #############################
     def particle_task(self, mult):
         return self.particle_path(t=self.t_initial+self.seperation_time*mult, phi_range_deg=self.particle_init_angle_range, T1_z=self.T1z, T1_width=self.T1_width, 
-                                                T4_z=self.T4z, T4_width=self.T4_width, T1_radius=self.T1_radius, T4_radius=self.T4_radius, mean_free_path=self.mean_free_path_scints, 
+                                                T4_z=self.T4z, T4_width=self.T4_width, T1_radius=self.T1_radius, T4_radius=self.T4_radius, T1_corner=[self.T4_radius,-self.T4_radius],
+                                                T4_corner=[self.T1_radius,-self.T1_radius], mean_free_path=self.mean_free_path_scints, 
                                                 photons_per_E=self.photons_produced_per_MeV, prob_scint=self.pr_of_scintillation)
     def scint_taskT1(self, xpoint, ypoint, zpoint, time_i):
         point_i = np.hstack((xpoint,ypoint,zpoint))
@@ -656,7 +671,7 @@ class Simulation:
                                                             pmt_center=[T_radius-4*0.5,-T_radius+4*0.5,Tz], pmt_radius=PMT_radius,
                                                             N_max=self.max_simulated_reflections, dt=input_time, keepdata=True)
             j += 1
-            if hit_PMT:
+            if np.sqrt(np.sum(photon_pos[0:2]**2)) > T_radius: # hit_PMT original condition
                 break
         print("Returned iteration",j)
         import matplotlib.pyplot as plt
@@ -697,13 +712,13 @@ class Simulation:
 if __name__ == '__main__':
     sim = Simulation()
     # sim.plot_scint(1,[0,0,0],1,True,100,1000)
-    # sim.plot_scint(4,[0,0,0],1,True,100,1000)
+    sim.plot_scint(4,[0,0,0],1,True,100,1000)
     # sim.artificial_gain = 2 # was 3
-    sim.num_particles = 20000
+    # sim.num_particles = 5
     # sim.run(5)
     # sim.to_csv()
     # sim.ltspice(filedate='05_07_2023',filenum=20000)
-    sim.calc_ToF(filedate='05_07_2023',filenum=20000)
-    sim.save_ToF()
+    # sim.calc_ToF(filedate='05_07_2023',filenum=20000)
+    # sim.save_ToF()
     # sim.load_ToF(filename='result_3867_of_8000_05_17_2023.txt')
-    sim.plotToF()
+    # sim.plotToF()
