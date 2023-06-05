@@ -407,37 +407,29 @@ class Simulation:
         self.output_times_channelT4 = np.array(output_times_channelT4)
     
     # Output function
-    def to_csv(self, channels=2):
+    def to_csv(self):
         
         # OUTPUT FORMATTING
-        if channels==1:
-            print("Exporing to 1 channel...")
-            fill_data = np.zeros((len(self.output_times)*2+2, 2))
-            fill_data[1:-1:2,0] = self.output_times-(self.output_bin_width/2)
-            fill_data[2:-1:2,0] = self.output_times+(self.output_bin_width/2)
-            df = pd.DataFrame(fill_data, columns=['time','current'])
-            df = pd.concat([df, pd.DataFrame({'time':self.output_times,'current':self.signals})], ignore_index=True).sort_values(by=['time']).reset_index(drop=True)
+        print("Exporing to 2 channels...")
+        # for each channel
+        for time,signal,ch in zip([self.output_times_channelT1,self.output_times_channelT4],[self.signals_channelT1,self.signals_channelT4],[1,4]):
+            # sort by time
+            df = pd.DataFrame({'time':time,'current':signal}).sort_values(by=['time'])          # return sorted dataframe
+            fill_data = []                                                                      # declare empty array
+            # begin padding data at time 1/5th bin width before first time stamp
+            fill_data.append([df['time'].iloc[0]-self.output_bin_width/5,0])                    # add zero at beginning
+            for i in range(len(time)-1):                                                        # for each time index
+                if abs(df['time'].iloc[i]-df['time'].iloc[i+1]) > self.output_bin_width:        # if dt between signals is greater than minimum bin width
+                    fill_data.append([df['time'].iloc[i]+self.output_bin_width/5,0])            # place zero after current signal
+                    fill_data.append([df['time'].iloc[i+1]-self.output_bin_width/5,0])          # place zero before next signal
+            fill_data.append([df['time'].iloc[-1]+self.output_bin_width/5,0])                   # add zero at end
+            fill_data = np.array(fill_data)
+            fill = pd.DataFrame(fill_data, columns=['time','current'])
+            df = pd.concat([fill, df], ignore_index=True).sort_values(by=['time']).reset_index(drop=True)
             df['time'] = df['time']/1e12
-            df.to_csv('monte_carlo_output.txt', float_format='%.13f', header=False, index=False, sep=' ')
+            df = df[['time', 'current']] # need this for LTSpice PWL current input file to work
+            df.to_csv('monte_carlo_input'+str(self.num_particles)+'ch'+str(ch)+'_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt', float_format='%.13f', header=False, index=False, sep=' ')
             print(df)
-        else:
-            print("Exporing to 2 channels...")
-            for time,signal,ch in zip([self.output_times_channelT1,self.output_times_channelT4],[self.signals_channelT1,self.signals_channelT4],[1,4]):
-                df = pd.DataFrame({'time':time,'current':signal}).sort_values(by=['time'])          # return sorted dataframe
-                fill_data = []                                                                      # declare empty array
-                fill_data.append([df['time'].iloc[0]-self.output_bin_width/5,0])                    # add zero at beginning
-                for i in range(len(time)-1):                                                        # for each time index
-                    if abs(df['time'].iloc[i]-df['time'].iloc[i+1]) > self.output_bin_width:        # if dt between signals is greater than minimum bin width
-                        fill_data.append([df['time'].iloc[i]+self.output_bin_width/5,0])            # place zero after current signal
-                        fill_data.append([df['time'].iloc[i+1]-self.output_bin_width/5,0])          # place zero before next signal
-                fill_data.append([df['time'].iloc[-1]+self.output_bin_width/5,0])                   # add zero at end
-                fill_data = np.array(fill_data)
-                fill = pd.DataFrame(fill_data, columns=['time','current'])
-                df = pd.concat([fill, df], ignore_index=True).sort_values(by=['time']).reset_index(drop=True)
-                df['time'] = df['time']/1e12
-                df = df[['time', 'current']]
-                df.to_csv('monte_carlo_input'+str(self.num_particles)+'ch'+str(ch)+'_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt', float_format='%.13f', header=False, index=False, sep=' ')
-                print(df)
         print("Done!")
     
     """
@@ -451,15 +443,15 @@ class Simulation:
         dtime = rawtime[limit]
         dtvoltage = rawVoltage[limit]
         tdiff = np.diff(dtime)
-        condition = tdiff > 1e-7 # check if next point is 100ns away
+        condition = tdiff > 10e-9 # check if next point is 10ns away
         count = 0
         start_index = 0
         for i in range(len(tdiff)): # for number of particles we expect
             if count > num-1:
                 return np.array(out)
             if condition[i]: # if condition is true at index i
-                times = dtime[start_index:i] # take snippet of time from starting index flag to index i
-                Voltages = dtvoltage[start_index:i]
+                times = dtime[start_index:i+1] # take snippet of time from starting index flag to index i
+                Voltages = dtvoltage[start_index:i+1]
                 start_index = i+1 # reset flag to next position
                 if len(times) < 1 or len(Voltages) < 1: # if no particle here then skip
                     continue
@@ -476,18 +468,19 @@ class Simulation:
             print("Check LTSpice that all particles were simulated.")
         return np.array(out)
 
-    def ToF_finalize(self, tofch1, tofch4, time_limit=50e-9):
-        # print("ch1 length", len(tofch1), "largest time diff", "%.5e" % max(np.diff(tofch1)), "zeros", (tofch1 == 0.0).sum())
-        # print("ch4 length", len(tofch4), "largest time diff", "%.5e" % max(np.diff(tofch4)), "zeros", (tofch4 == 0.0).sum())
+    def ToF_finalize(self, tofch1, tofch4, time_limit=10e-9):
+        print("ch1 length", len(tofch1))
+        print("ch4 length", len(tofch4))
         out = []
         i = 0; j = 0
+        lim = time_limit if time_limit is not None else 10e-9
         while (i < len(tofch1)) and (j < len(tofch4)):
-            check = tofch1[i] - tofch4[j]
-            if abs(check) < time_limit:
+            check = tofch4[j] - tofch1[i]
+            if abs(check) < lim:
                 out.append(abs(check))
                 i+=1
                 j+=1
-            elif check > 0:
+            elif (i+1 < len(tofch1)) and (j+1 < len(tofch4)) and check < 0:
                 j+=1
             else: #check < 0
                 i+=1
@@ -522,7 +515,7 @@ class Simulation:
         for filename,strname in zip([filename_ch1,filename_ch4],['ch1','ch4']):
             print('PWL file='+str(filename))
             LTC.set_element_model('I1', 'PWL file='+str(filename))
-            LTC.add_instructions("; Simulation settings", f".tran 0 {self.num_particles}.5u 0 0.002u") # fix this to adjust for time seperation
+            LTC.add_instructions("; Simulation settings", f".tran 0 {num_part}.5u 0 0.002u") # fix this to adjust for time seperation
             # print(LTC.get_component_info('I1')) # to check if correctly set
             LTC.run(run_filename=f'PHAReduced_{strname}.net')
             LTC.wait_completion()
@@ -606,7 +599,7 @@ class Simulation:
     def plotToF(self):
         import matplotlib.pyplot as plt
         plt.title(f'TOF, Total Points {len(self.FinalToF)}')
-        plt.hist(self.FinalToF, bins=50)
+        plt.hist(self.FinalToF, bins=np.linspace(0,5e-9,125), histtype='step', edgecolor='k', linewidth=2)
         plt.axvline(np.mean(self.FinalToF), label=f'$\mu$={np.mean(self.FinalToF):.2e}', color='C1')
         plt.grid()
         plt.legend()
@@ -706,11 +699,11 @@ if __name__ == '__main__':
     # sim.plot_scint(1,[0,0,0],1,True,100,1000)
     # sim.plot_scint(4,[0,0,0],1,True,100,1000)
     # sim.artificial_gain = 2 # was 3
-    # sim.num_particles = 5
+    sim.num_particles = 20000
     # sim.run(5)
     # sim.to_csv()
-    # sim.ltspice(filedate='05_08_2023',filenum=8000)
-    # sim.calc_ToF(filedate='05_08_2023',filenum=8000)
-    # sim.save_ToF()
-    sim.load_ToF(filename='result_3867_of_8000_05_17_2023.txt')
+    # sim.ltspice(filedate='05_07_2023',filenum=20000)
+    sim.calc_ToF(filedate='05_07_2023',filenum=20000)
+    sim.save_ToF()
+    # sim.load_ToF(filename='result_3867_of_8000_05_17_2023.txt')
     sim.plotToF()

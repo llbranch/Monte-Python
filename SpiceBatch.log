@@ -1,0 +1,39 @@
+INFO:SimRunner:SimRunner started
+INFO:sim1:: Starting simulation 1
+INFO:sim1:Simulation Successful. Time elapsed: 00:00:00
+INFO:sim1:Simulation Finished. No Callback function given
+INFO:sim2:: Starting simulation 2
+INFO:sim2:Simulation Successful. Time elapsed: 00:00:00
+INFO:sim2:Simulation Finished. No Callback function given
+INFO:SimRunner:SimRunner started
+INFO:sim1:: Starting simulation 1
+INFO:sim1:Simulation Successful. Time elapsed: 00:00:00
+INFO:sim1:Simulation Finished. No Callback function given
+INFO:sim2:: Starting simulation 2
+INFO:sim2:Simulation Successful. Time elapsed: 00:00:00
+INFO:sim2:Simulation Finished. No Callback function given
+INFO:SimRunner:SimRunner started
+INFO:sim1:: Starting simulation 1
+INFO:sim1:Simulation Successful. Time elapsed: 00:00:00
+INFO:sim1:Simulation Finished. No Callback function given
+INFO:sim2:: Starting simulation 2
+INFO:sim2:Simulation Successful. Time elapsed: 00:00:00
+INFO:sim2:Simulation Finished. No Callback function given
+INFO:SimRunner:SimRunner started
+INFO:sim1:: Starting simulation 1
+INFO:sim1:Simulation Successful. Time elapsed: 00:00:00
+INFO:sim1:Simulation Finished. No Callback function given
+INFO:sim2:: Starting simulation 2
+INFO:sim2:Simulation Successful. Time elapsed: 00:00:00
+INFO:sim2:Simulation Finished. No Callback function given
+INFO:SimRunner:SimRunner started
+INFO:sim1:: Starting simulation 1
+WARNING:sim1:: Simulation Failed. Time elapsed: 00:00:00
+INFO:SimRunner:SimRunner started
+INFO:sim1:: Starting simulation 1
+INFO:sim1:Simulation Successful. Time elapsed: 00:00:00
+INFO:sim1:Simulation Finished. No Callback function given
+INFO:sim2:: Starting simulation 2
+INFO:sim2:Simulation Successful. Time elapsed: 00:00:00
+INFO:sim2:Simulation Finished. No Callback function given
+INFO:matplotlib.font_manager:generated new fontManager
