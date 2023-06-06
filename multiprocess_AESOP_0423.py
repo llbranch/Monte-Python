@@ -91,13 +91,18 @@ class Simulation:
         return np.linalg.norm(x)
     
     # LIGHT GUIDE CONDITION
-    def quadrant_sign(self, corner_pt):
-        negatives = 0
-        if corner_pt[0] < 0:
-            negatives = (negatives + 1) % 2
-        if corner_pt[1] < 0:
-            negatives = (negatives + 1) % 2
-        return -1*negatives
+    def lg_condition(self, corner_pt, scint_corner, scint_num):
+        ret = (corner_pt[0] > 0) & (corner_pt[0] < scint_corner[0]) & (corner_pt[1] < 0) & (corner_pt[1] > scint_corner[1])
+        if scint_num == 4:
+            ret = (corner_pt[0] > 0) & (corner_pt[0] < scint_corner[0]) & (corner_pt[1] < 0) & (corner_pt[1] > scint_corner[1])
+        return ret
+
+    # SCINT RADIUS CONDITION
+    def scint_condition(self, corner_pt, scint_radius, scint_num):
+        ret = np.sqrt(np.sum(corner_pt[0:2]**2)) < self.T1_radius
+        if scint_num == 4:
+            ret = np.sqrt(np.sum(corner_pt[0:2]**2)) < self.T4_radius
+        return ret
 
     # DISTANCE 2-DIM CIRCLE WITH LINE SEGMENT
     # t = -D . ∆ ± √(D . ∆)^2 - |D|^2(|∆|^2 - R^2)
@@ -230,29 +235,53 @@ class Simulation:
         cur_o = points[-1]                                                                 # current z 
         next_o = (cur_o+mean_free_path*u).round(round_const)                                  # next z step
         inside_scint = False
+        missed = 0
         while next_o[2] >= T4_z:
             if not inside_scint:
+                if missed:
+                    theta = random.uniform(0,2*np.pi)                                                 # reset random theta in circle above T1
+                    phi = random.uniform(np.pi-phi_range_deg*np.pi/180/2,np.pi+phi_range_deg*np.pi/180/2) # reset phi angle pointing in -k given phi range
+                    maxdist = np.random.random()*T1_radius/2                                          # reset random point inside half the radius of T1
+                    round_const = self.round_to_sig(mean_free_path)
+                    o = np.float64((maxdist*np.cos(theta), maxdist*np.sin(theta), T1_z+T1_width+2))   # reset x, y, top of T1_z+2
+                    u = np.array((np.cos(theta)*np.sin(phi),np.sin(theta)*np.sin(phi),np.cos(phi)),dtype=np.float64) # reset u direction
+                    photons.clear(); points.clear(); times.clear()
+                    photons = [0]                                                                     # reset photon array
+                    points = [o]                                                                      # reset current point 
+                    times = [t]                                                                       # reset current t 
+                    cur_o = points[-1]                                                                # reset current z 
+                    next_o = (cur_o+mean_free_path*u).round(round_const)                              # reset next z step
+                    missed = False
                 distT1 = np.abs((T1_z+T1_width - cur_o[2])/u[2])
                 distT4 = np.abs((T4_z+T4_width - cur_o[2])/u[2])
                 dist = distT4 if next_o[2] < T1_z else distT1
-                next_o = (cur_o+dist*u).round(round_const)
-                inside_T1 = ((np.sqrt(np.sum(next_o[0:2]**2)) < T1_radius) | ((next_o[0] < T1_corner[0]) & (next_o[1] > T1_corner[1])))
-                inside_T4 = ((np.sqrt(np.sum(next_o[0:2]**2)) < T4_radius) | ((next_o[0] < T4_corner[0]) & (next_o[1] > T4_corner[1])))
-                inside_scint = inside_T4 if next_o[2] < T1_z else inside_T1
-                if not inside_scint:
+                check = (cur_o+dist*u).round(round_const)
+                inside_T1 = self.scint_condition(check, T1_radius, 1) | self.lg_condition(check, T1_corner, 1)
+                inside_T4 = self.scint_condition(check, T4_radius, 4) | self.lg_condition(check, T4_corner, 4)
+                scint_cond = inside_T4 if check[2] < T1_z else inside_T1
+                # print(f"inside_T1={inside_T1} inside_T4={inside_T4}")
+                # print("outer whileloop", scint_cond, next_o, dist, T4_z)          
+                if scint_cond:
+                    t +=  dist/self.c     # calculate time in ps passed
+                    times.append(t)
+                    points.append(points[-1]+dist*u+mean_free_path*u)
+                    phot = np.random.poisson(photons_per_E)
+                    if np.random.random() < prob_scint: photons.append(phot)
+                    else: photons.append(0)
+                    cur_o = points[-1]                                     # current point 
+                    next_o = (cur_o+mean_free_path*u).round(round_const)           # next point
+                    # print("z",cur_o[2],"z_1",next_o[2])
+                    inside_scint = True
+                else: # missed a scintillator / lightguide so throw away and restart
+                    # print("missed!")
+                    missed = True
+                    inside_scint = False
                     continue
-                t +=  dist/self.c                                                               # calculate time in ps passed
-                times.append(t)
-                points.append(next_o)
-                phot = np.random.poisson(photons_per_E)
-                if np.random.random() < prob_scint: photons.append(phot)
-                else: photons.append(0)
-                cur_o = points[-1]                                                                 # current z 
-                next_o = (cur_o+mean_free_path*u).round(round_const)  # make this just the whole vector calculation
-            for Tbottom,Ttop,Tradius,Tcorner in [(T1_z,T1_z+T1_width,T1_radius,T1_corner),(T4_z,T4_z+T4_width,T4_radius,T4_corner)]:
-                inside_scint = (next_o[2] <= (Ttop)) & (next_o[2] >= Tbottom) & ((np.sqrt(np.sum(next_o[0:2]**2)) < Tradius) | ((next_o[0] < Tcorner[0]) & (next_o[1] > Tcorner[1])))
+            for Tbottom,Ttop,Tradius,Tcorner,num in [(T1_z,T1_z+T1_width,T1_radius,T1_corner,1),(T4_z,T4_z+T4_width,T4_radius,T4_corner,4)]:
+                inside_scint = (next_o[2] <= (Ttop)) & (next_o[2] >= Tbottom) & (self.scint_condition(next_o, Tradius, num) | self.lg_condition(next_o, Tcorner, num))
                 while inside_scint:
-                    t +=  mean_free_path/self.c
+                    # print("inner whileloop", inside_scint)
+                    t += mean_free_path/self.c
                     times.append(t)
                     points.append(cur_o+mean_free_path*u)
                     phot = np.random.poisson(photons_per_E)
@@ -260,7 +289,7 @@ class Simulation:
                     else: photons.append(0)
                     cur_o = points[-1]                                                                 # current z 
                     next_o = (cur_o+mean_free_path*u).round(round_const)
-                    inside_scint = (next_o[2] <= (Ttop)) & (next_o[2] >= Tbottom) & ((np.sqrt(np.sum(next_o[0:2]**2)) < Tradius) | ((next_o[0] < Tcorner[0]) & (next_o[1] > Tcorner[1])))
+                    inside_scint = (next_o[2] <= (Ttop)) & (next_o[2] >= Tbottom) & (self.scint_condition(next_o, Tradius, num) | self.lg_condition(next_o, Tcorner, num))
         # print(f"time elapsed in scintillators: {np.abs(times[1]-times[-1]):.2f}ps total scintillation points: {len(points[1:])}")
         return np.array(times, dtype=np.float64)[1:], np.array(points, dtype=np.float64)[1:], np.array(photons[1:], dtype=np.float64)
 
@@ -611,6 +640,7 @@ class Simulation:
             self.FinalToF = new_ToF_data.to_numpy()
         else:
             self.FinalToF = np.append(self.FinalToF, new_ToF_data.to_numpy())
+    
     def plotToF(self):
         import matplotlib.pyplot as plt
         plt.title(f'TOF, Total Points {len(self.FinalToF)}')
@@ -671,7 +701,7 @@ class Simulation:
                                                             pmt_center=[T_radius-4*0.5,-T_radius+4*0.5,Tz], pmt_radius=PMT_radius,
                                                             N_max=self.max_simulated_reflections, dt=input_time, keepdata=True)
             j += 1
-            if np.sqrt(np.sum(photon_pos[0:2]**2)) > T_radius: # hit_PMT original condition
+            if hit_PMT: # hit_PMT original condition
                 break
         print("Returned iteration",j)
         import matplotlib.pyplot as plt
@@ -706,13 +736,82 @@ class Simulation:
         # ax.view_init(elev=90, azim=-90, roll=0)
         plt.show()
 
+    def plot_full_apparatus(self, ax):
+        # Create plot data
+        XT1, YT1, ZT1 = self.data_for_cylinder_along_z(0,0,self.T1_radius,self.T1_width,self.T1z, 0, 3*np.pi/2)
+        XT4, YT4, ZT4 = self.data_for_cylinder_along_z(0,0,self.T4_radius,self.T4_width,self.T4z, 0, 3*np.pi/2)
+        Xlg1T1, Zlg1T1 = np.meshgrid(np.linspace(0,self.T1_radius,10),np.linspace(self.T1z,self.T1z+self.T1_width,10))
+        Xlg1T4, Zlg1T4 = np.meshgrid(np.linspace(0,self.T4_radius,10),np.linspace(self.T4z,self.T4z+self.T4_width,10))
+        Ylg1T1 = -np.ones((10,10))*self.T1_radius
+        Ylg1T4 = -np.ones((10,10))*self.T4_radius
+        Ylg2T1, Zlg2T1 = np.meshgrid(np.linspace(0,-self.T1_radius,10),np.linspace(self.T1z,self.T1z+self.T1_width,10))
+        Ylg2T4, Zlg2T4 = np.meshgrid(np.linspace(0,-self.T4_radius,10),np.linspace(self.T4z,self.T4z+self.T4_width,10))
+        Xlg2T1 = np.ones((10,10))*self.T1_radius
+        Xlg2T4 = np.ones((10,10))*self.T4_radius
+        PMTxyzT1 = [self.T1_radius-4*0.5,-self.T1_radius+4*0.5,self.T1z]
+        PMTxyzT4 = [self.T4_radius-4*0.5,-self.T4_radius+4*0.5,self.T4z]
+        PMT_XT1, PMT_YT1, PMT_ZT1 = self.data_for_cylinder_along_z(PMTxyzT1[0],PMTxyzT1[1],self.PMT1_radius,0.5,PMTxyzT1[2]-0.5, 0, 2*np.pi)
+        PMT_XT4, PMT_YT4, PMT_ZT4 = self.data_for_cylinder_along_z(PMTxyzT4[0],PMTxyzT4[1],self.PMT4_radius,0.5,PMTxyzT4[2]-0.5, 0, 2*np.pi)
+        # Plot data
+        ax.plot_wireframe(Xlg1T1, Ylg1T1, Zlg1T1, alpha=0.2, color='C0')
+        ax.plot_wireframe(Xlg2T1, Ylg2T1, Zlg2T1, alpha=0.2, color='C0')
+        ax.plot_wireframe(Xlg1T4, Ylg1T4, Zlg1T4, alpha=0.2, color='C0')
+        ax.plot_wireframe(Xlg2T4, Ylg2T4, Zlg2T4, alpha=0.2, color='C0')
+        ax.plot_wireframe(XT1, YT1, ZT1, alpha=0.2)
+        ax.plot_wireframe(XT4, YT4, ZT4, alpha=0.2)
+        ax.plot_wireframe(PMT_XT1, PMT_YT1, PMT_ZT1, alpha=0.2, color='purple')
+        ax.plot_wireframe(PMT_XT4, PMT_YT4, PMT_ZT4, alpha=0.2, color='purple')
+        ax.scatter(self.xPMT1, self.yPMT1, self.T1z, color='red', marker='o')
+        ax.scatter(self.xPMT4, self.yPMT4, self.T4z, color='red', marker='o')
+        # Fix axes
+        ax.grid(True)
+        ax.set_xlabel('x [cm]')
+        ax.set_ylabel('y [cm]')
+        ax.set_zlabel('z [cm]')
+        ax.set_zlim([self.T4z-0.5,self.T1z+self.T1_width+0.5])
+        ax.set_ylim([-self.T4_radius,self.T4_radius])
+        ax.set_xlim([-self.T4_radius,self.T4_radius])
+        # ax.view_init(elev=90, azim=-90, roll=0)
 
+    def plot_particle_dist(self, scint, *arg):
+        if scint == 1:
+            Tz = self.T1z; T_width = self.T1_width; PMTx = self.xPMT1; PMTy = self.yPMT1 
+            T_radius = self.T1_radius; PMT_radius = self.PMT1_radius
+        elif scint == 4:
+            Tz = self.T4z; T_width = self.T4_width; PMTx = self.xPMT4; PMTy = self.yPMT4 
+            T_radius = self.T4_radius; PMT_radius = self.PMT4_radius
+        else:
+            print("Incorrect scint number. Use 1 or 4")
+            return
+        rep = 1
+        if arg:
+            if (len(arg) > 0) and (arg[0] < 200):
+                print(f"Particles to simulate scintillation: {arg[0]:d}")
+                rep = int(arg[0])
+        print(f"Generating random particles {rep} times!")
+        points = np.zeros((1,3))
+        lines = np.zeros((rep+1,2,3))
+        for i in range(rep):
+            _, points_i, _ = self.particle_task(0)
+            points = np.concatenate((points,points_i), axis=0)
+            lines[i,0,:] = points_i[0]
+            lines[i,1,:] = points_i[-1]
+        print(f"Particles shape: {points.shape}")
+        import matplotlib.pyplot as plt
+        fig = plt.figure(figsize=(6,6))
+        ax = fig.add_subplot(111,projection='3d')
+        self.plot_full_apparatus(ax)
+        ax.scatter(points[::100,0],points[::100,1],points[::100,2], color='green', marker='o', s=0.5)
+        for i in range(rep):
+            ax.plot(lines[i,:,0],lines[i,:,1],lines[i,:,2], color='C3')
+        plt.show()
 
 
 if __name__ == '__main__':
     sim = Simulation()
     # sim.plot_scint(1,[0,0,0],1,True,100,1000)
-    sim.plot_scint(4,[0,0,0],1,True,100,1000)
+    # sim.plot_scint(4,[0,0,0],1,True,100,2000)
+    sim.plot_particle_dist(4,25)
     # sim.artificial_gain = 2 # was 3
     # sim.num_particles = 5
     # sim.run(5)
@@ -722,3 +821,4 @@ if __name__ == '__main__':
     # sim.save_ToF()
     # sim.load_ToF(filename='result_3867_of_8000_05_17_2023.txt')
     # sim.plotToF()
+
