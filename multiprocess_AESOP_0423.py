@@ -146,8 +146,19 @@ class Simulation:
         temp_o = o+dist*u
         PMT_cond = False
         if (temp_o[0] > 0) & (temp_o[1] < 0) & ((temp_o[0]**2+temp_o[1]**2) >= radius**2-1):
-            dplanex = self.distance_plane(u,o,radius,dim=0)                        # checks distance to x boundary
-            dplaney = self.distance_plane(u,o,-radius,dim=1)                       # checks distance to y boundary
+            dplanex = self.distance_plane(u,o,radius,dim=0)                        # checks distance to +x boundary
+            dplaney = self.distance_plane(u,o,-radius,dim=1)                       # checks distance to -y boundary
+            dplanez = self.distance_plane(u,o,plane_z,dim=2)                       # checks distance to z boundary inside light guide
+            dcorner = self.distance_circle(u,o,corner_center, corner_radius, True) # checks distance to corner boundary
+            light_guide_dist = np.min([dplanex,dplaney,dplanez,dcorner])
+            temp_o = o+(light_guide_dist)*u                                   # resuse this variable
+                                                                            # if close to z = zero and within PMT circle
+            if (temp_o[2] < (plane_z[0]+0.01)) & (((temp_o[0]-pmt_center[0])**2+(temp_o[1]-pmt_center[1])**2) <= pmt_radius**2): 
+                PMT_cond = True
+            return light_guide_dist, PMT_cond
+        elif (temp_o[0] < 0) & (temp_o[1] > 0) & ((temp_o[0]**2+temp_o[1]**2) >= radius**2-1):
+            dplanex = self.distance_plane(u,o,-radius,dim=0)                       # checks distance to -x boundary
+            dplaney = self.distance_plane(u,o,radius,dim=1)                        # checks distance to +y boundary
             dplanez = self.distance_plane(u,o,plane_z,dim=2)                       # checks distance to z boundary inside light guide
             dcorner = self.distance_circle(u,o,corner_center, corner_radius, True) # checks distance to corner boundary
             light_guide_dist = np.min([dplanex,dplaney,dplanez,dcorner])
@@ -169,7 +180,7 @@ class Simulation:
             # absorbed by white paint and reemmitted back 
             # into scintillator with random direction given by random angles Phi_3, Theta_3
             # with constraint of z coordinate entering
-    def photon_interaction(self, o, u, n, notabsorbed, scint_plane):
+    def photon_interaction(self, u, n):
         u_r = u - 2*np.dot(u, n)*n                      # u_new = u - 2 (u . n)*n
         v = u*-1 if np.dot(u,n) < 0 else u
         theta = np.arcsin(self.mag(np.cross(v,n))/(self.mag(u)*self.mag(n)))
@@ -197,9 +208,9 @@ class Simulation:
         elif o[2] == scint_plane[1]:                                    # top of scint
             return np.array([0,0,-1])
         elif o[0] == light_guide_planes[0]:                             # y plane of light guide 
-            return np.array([0,+1,0])
+            return np.array([0,light_guide_planes[0]/abs(light_guide_planes[0]),0])
         elif o[1] == light_guide_planes[1]:                             # x plane of light guide
-            return np.array([-1,0,0])
+            return np.array([light_guide_planes[1]/abs(light_guide_planes[1]),0,0])
         elif (o[0] >= corner_center[0]) & (o[1] <= corner_center[1]):   # in corner
             return self.normalize(o-corner_center)
         else:                                                           # in main scintillator
@@ -297,7 +308,8 @@ class Simulation:
     def scintillator_monte_carlo(self, o, notabsorbed, scint_radius, scint_plane, scint_width, light_guide_planes, pmt_center, pmt_radius, N_max, dt, keepdata):
         if keepdata: track_history = np.zeros((N_max+1,7))         # x, y history of Photon
         corner_radius = scint_width*4
-        corner_center = [scint_radius-corner_radius,-scint_radius+corner_radius,scint_plane[0]]
+        signs = light_guide_planes/np.abs(light_guide_planes)
+        corner_center = [signs[0]*(scint_radius-corner_radius),signs[1]*(scint_radius-corner_radius),scint_plane[0]]
         theta = random.uniform(0,2*np.pi)             # first theta direction of photon
         phi = random.uniform(0,np.pi)                 # first phi   direction of photon
         PMT_hit_condition = False
@@ -311,7 +323,7 @@ class Simulation:
             dt += np.abs(ds)/self.c                        # time taken in ps traveling in direction theta
     #         print(f"step {i}: ds={ds:.2f}cm dt={dt:.2f}ps Absorbed?={not notabsorbed} xyz =({x:.2f},{y:.2f},{z:.2f}) u=({u[0]:.2f},{u[1]:.2f},{u[2]:.2f})")
             n = self.n_vec_calculate(o, scint_plane, light_guide_planes, corner_center, corner_radius)
-            u, notabsorbed = self.photon_interaction(o, u, n, notabsorbed, scint_plane)
+            u, notabsorbed = self.photon_interaction(u, n)
             if keepdata: track_history[i] = [x,y,z,u[0],u[1],u[2],notabsorbed]
             i+=1
         if keepdata & (i < N_max+1):
@@ -354,8 +366,8 @@ class Simulation:
         point_i = np.hstack((xpoint,ypoint,zpoint))
         return self.scintillator_monte_carlo(point_i, notabsorbed=True, scint_radius=self.T4_radius, 
                                                         scint_plane=np.array([self.T4z,self.T4z+self.T4_width]), scint_width=self.T4_width, 
-                                                        light_guide_planes=[self.T4_radius,-self.T4_radius], 
-                                                        pmt_center=[self.T4_radius-4*0.5,-self.T4_radius+4*0.5,self.T4z], pmt_radius=self.PMT4_radius,
+                                                        light_guide_planes=[-self.T4_radius,+self.T4_radius], 
+                                                        pmt_center=[-self.T4_radius+4*0.5,self.T4_radius-4*0.5,self.T4z], pmt_radius=self.PMT4_radius,
                                                         N_max=self.max_simulated_reflections, dt=time_i, keepdata=False)
     def days_hours_minutes(self, td):
         # days 
@@ -654,24 +666,37 @@ class Simulation:
     # DEBUG AND PLOTTING
     #############################
 
-    def data_for_cylinder_along_z(self, center_x,center_y,radius,height_z,pos_z, start_theta, end_theta):
-        z = np.linspace(pos_z, pos_z+height_z, 20)
+    def data_for_cylinder_along_z(self, center_x,center_y,radius,top_z,pos_z, start_theta, end_theta):
+        z = np.linspace(pos_z, pos_z+top_z, 20)
         theta = np.linspace(start_theta, end_theta, 20)
         theta_grid, z_grid=np.meshgrid(theta, z)
         x_grid = radius*np.cos(theta_grid) + center_x
         y_grid = radius*np.sin(theta_grid) + center_y
         return x_grid,y_grid,z_grid
     
+    def light_guide_corner(self, border_point, height_z, pos_z, border_radius, scint): 
+        z = np.linspace(pos_z, height_z, 20)
+        theta = np.linspace(0, -np.pi/2, 20)
+        if scint == 4:
+            theta = np.linspace(np.pi, np.pi/2, 20)
+        theta_grid, Z = np.meshgrid(theta, z)
+        X = border_radius*np.cos(theta_grid) + border_point[0]-border_radius
+        Y = border_radius*np.sin(theta_grid) + border_point[1]+border_radius
+        if scint == 4:
+            X = border_radius*np.cos(theta_grid) + border_point[0]+border_radius
+            Y = border_radius*np.sin(theta_grid) + border_point[1]-border_radius
+        return X,Y,Z
+    
     # Input: 3d photon position, input_time | Optional: int index of genreated scintillation points, int max iteration for PMT hit search
     def plot_scint(self, scint, photon_pos, input_time, *arg):
         # Handle arguments
-        Tz = 0; T_width = 0; T_radius = 0; PMT_radius = 0 # intialize main variables
+        Tz = 0; T_width = 0; T_radius = 0; PMT_radius = 0; sign = 1 # intialize main variables
         if scint == 1:
             Tz = self.T1z; T_width = self.T1_width; PMTx = self.xPMT1; PMTy = self.yPMT1 
             T_radius = self.T1_radius; PMT_radius = self.PMT1_radius
         elif scint == 4:
             Tz = self.T4z; T_width = self.T4_width; PMTx = self.xPMT4; PMTy = self.yPMT4 
-            T_radius = self.T4_radius; PMT_radius = self.PMT4_radius
+            T_radius = self.T4_radius; PMT_radius = self.PMT4_radius; sign = -1
         else:
             print("Incorrect scint number. Use 1 or 4")
             return
@@ -697,8 +722,8 @@ class Simulation:
         while j < rep:
             hit_PMT, _, tracks = self.scintillator_monte_carlo(photon_pos, notabsorbed=True, scint_radius=T_radius, 
                                                             scint_plane=np.array([Tz,Tz+T_width]), scint_width=T_width, 
-                                                            light_guide_planes=[T_radius,-T_radius], 
-                                                            pmt_center=[T_radius-4*0.5,-T_radius+4*0.5,Tz], pmt_radius=PMT_radius,
+                                                            light_guide_planes=[sign*T_radius,sign*-T_radius], 
+                                                            pmt_center=[sign*(T_radius-4*0.5),sign*(-T_radius+4*0.5),Tz], pmt_radius=PMT_radius,
                                                             N_max=self.max_simulated_reflections, dt=input_time, keepdata=True)
             j += 1
             if hit_PMT: # hit_PMT original condition
@@ -707,52 +732,31 @@ class Simulation:
         import matplotlib.pyplot as plt
         fig = plt.figure(figsize=(6,6))
         ax = fig.add_subplot(111,projection='3d')
-        # Create plot data
-        X, Y, Z = self.data_for_cylinder_along_z(0,0,T_radius,T_width,Tz, 0, 3*np.pi/2)
-        Xlg1, Zlg1 = np.meshgrid(np.linspace(0,T_radius,10),np.linspace(Tz,Tz+T_width,10))
-        Ylg1 = -np.ones((10,10))*T_radius
-        Ylg2, Zlg2 = np.meshgrid(np.linspace(0,-T_radius,10),np.linspace(Tz,Tz+T_width,10))
-        Xlg2 = np.ones((10,10))*T_radius
-        PMTxyz = [T_radius-4*0.5,-T_radius+4*0.5,Tz]
-        PMT_X, PMT_Y, PMT_Z = self.data_for_cylinder_along_z(PMTxyz[0],PMTxyz[1],PMT_radius,0.5,PMTxyz[2]-0.5, 0, 2*np.pi)
-        # Plot data
-        ax.plot_wireframe(Xlg1, Ylg1, Zlg1, alpha=0.2, color='C0')
-        ax.plot_wireframe(Xlg2, Ylg2, Zlg2, alpha=0.2, color='C0')
-        ax.plot_wireframe(X, Y, Z, alpha=0.2)
-        ax.plot_wireframe(PMT_X, PMT_Y, PMT_Z, alpha=0.2, color='purple')
-        ax.scatter(photon_pos[0],photon_pos[1],photon_pos[2], color='red', marker='o')
-        ax.scatter(PMTx, PMTy, Tz, color='red', marker='o')
+        self.plot_full_apparatus(ax)
         ax.quiver(tracks[:,0],tracks[:,1],tracks[:,2], tracks[:,3], tracks[:,4],tracks[:,5], length=1, edgecolor='k', facecolor='black', linewidth=1.5)
         ax.plot(tracks[:,0],tracks[:,1],tracks[:,2], alpha=0.5, color='C1', marker='.')
-        ax.text(photon_pos[0],photon_pos[1],photon_pos[2], f'hitPMT1? {hit_PMT}')
-        # Fix axes
-        ax.grid(True)
-        ax.set_xlabel('x [cm]')
-        ax.set_ylabel('y [cm]')
-        ax.set_zlabel('z [cm]')
-        ax.set_zlim([Tz-0.5,Tz+T_width+0.5])
-        ax.set_ylim([-T_radius,T_radius])
-        ax.set_xlim([-T_radius,T_radius])
-        # ax.view_init(elev=90, azim=-90, roll=0)
+        ax.text(photon_pos[0],photon_pos[1],photon_pos[2], f'hitPMT1? {hit_PMT == 1}')
         plt.show()
 
     def plot_full_apparatus(self, ax):
         # Create plot data
         XT1, YT1, ZT1 = self.data_for_cylinder_along_z(0,0,self.T1_radius,self.T1_width,self.T1z, 0, 3*np.pi/2)
-        XT4, YT4, ZT4 = self.data_for_cylinder_along_z(0,0,self.T4_radius,self.T4_width,self.T4z, 0, 3*np.pi/2)
-        Xlg1T1, Zlg1T1 = np.meshgrid(np.linspace(0,self.T1_radius,10),np.linspace(self.T1z,self.T1z+self.T1_width,10))
-        Xlg1T4, Zlg1T4 = np.meshgrid(np.linspace(0,self.T4_radius,10),np.linspace(self.T4z,self.T4z+self.T4_width,10))
+        XT4, YT4, ZT4 = self.data_for_cylinder_along_z(0,0,self.T4_radius,self.T4_width,self.T4z, -np.pi, np.pi/2)
+        Xlg1T1, Zlg1T1 = np.meshgrid(np.linspace(0,self.T1_radius-self.T1_width*4,10),np.linspace(self.T1z,self.T1z+self.T1_width,10))
+        Xlg1T4, Zlg1T4 = np.meshgrid(np.linspace(0,-self.T4_radius+self.T4_width*4,10),np.linspace(self.T4z,self.T4z+self.T4_width,10))
         Ylg1T1 = -np.ones((10,10))*self.T1_radius
-        Ylg1T4 = -np.ones((10,10))*self.T4_radius
-        Ylg2T1, Zlg2T1 = np.meshgrid(np.linspace(0,-self.T1_radius,10),np.linspace(self.T1z,self.T1z+self.T1_width,10))
-        Ylg2T4, Zlg2T4 = np.meshgrid(np.linspace(0,-self.T4_radius,10),np.linspace(self.T4z,self.T4z+self.T4_width,10))
+        Ylg1T4 = +np.ones((10,10))*self.T4_radius
+        Ylg2T1, Zlg2T1 = np.meshgrid(np.linspace(0,-self.T1_radius+self.T1_width*4,10),np.linspace(self.T1z,self.T1z+self.T1_width,10))
+        Ylg2T4, Zlg2T4 = np.meshgrid(np.linspace(0,+self.T4_radius-self.T4_width*4,10),np.linspace(self.T4z,self.T4z+self.T4_width,10))
         Xlg2T1 = np.ones((10,10))*self.T1_radius
-        Xlg2T4 = np.ones((10,10))*self.T4_radius
-        PMTxyzT1 = [self.T1_radius-4*0.5,-self.T1_radius+4*0.5,self.T1z]
-        PMTxyzT4 = [self.T4_radius-4*0.5,-self.T4_radius+4*0.5,self.T4z]
+        Xlg2T4 = -np.ones((10,10))*self.T4_radius
+        PMTxyzT1 = [+self.T1_radius-4*0.5,-self.T1_radius+4*0.5,self.T1z]
+        PMTxyzT4 = [-self.T4_radius+4*0.5,+self.T4_radius-4*0.5,self.T4z]
         PMT_XT1, PMT_YT1, PMT_ZT1 = self.data_for_cylinder_along_z(PMTxyzT1[0],PMTxyzT1[1],self.PMT1_radius,0.5,PMTxyzT1[2]-0.5, 0, 2*np.pi)
         PMT_XT4, PMT_YT4, PMT_ZT4 = self.data_for_cylinder_along_z(PMTxyzT4[0],PMTxyzT4[1],self.PMT4_radius,0.5,PMTxyzT4[2]-0.5, 0, 2*np.pi)
-        # Plot data
+        SphXT1, SphYT1, SphZT1 = self.light_guide_corner([self.T1_radius,-self.T1_radius], self.T1_width+self.T1z, self.T1z, self.T1_width*4, 1)
+        SphXT4, SphYT4, SphZT4 = self.light_guide_corner([-self.T4_radius,self.T4_radius], self.T4_width+self.T4z, self.T4z, self.T4_width*4, 4)
+        # Plot data 
         ax.plot_wireframe(Xlg1T1, Ylg1T1, Zlg1T1, alpha=0.2, color='C0')
         ax.plot_wireframe(Xlg2T1, Ylg2T1, Zlg2T1, alpha=0.2, color='C0')
         ax.plot_wireframe(Xlg1T4, Ylg1T4, Zlg1T4, alpha=0.2, color='C0')
@@ -761,6 +765,8 @@ class Simulation:
         ax.plot_wireframe(XT4, YT4, ZT4, alpha=0.2)
         ax.plot_wireframe(PMT_XT1, PMT_YT1, PMT_ZT1, alpha=0.2, color='purple')
         ax.plot_wireframe(PMT_XT4, PMT_YT4, PMT_ZT4, alpha=0.2, color='purple')
+        ax.plot_wireframe(SphXT1, SphYT1, SphZT1, alpha=0.2, color='C0')
+        ax.plot_wireframe(SphXT4, SphYT4, SphZT4, alpha=0.2, color='C0')
         ax.scatter(self.xPMT1, self.yPMT1, self.T1z, color='red', marker='o')
         ax.scatter(self.xPMT4, self.yPMT4, self.T4z, color='red', marker='o')
         # Fix axes
@@ -773,22 +779,13 @@ class Simulation:
         ax.set_xlim([-self.T4_radius,self.T4_radius])
         # ax.view_init(elev=90, azim=-90, roll=0)
 
-    def plot_particle_dist(self, scint, *arg):
-        if scint == 1:
-            Tz = self.T1z; T_width = self.T1_width; PMTx = self.xPMT1; PMTy = self.yPMT1 
-            T_radius = self.T1_radius; PMT_radius = self.PMT1_radius
-        elif scint == 4:
-            Tz = self.T4z; T_width = self.T4_width; PMTx = self.xPMT4; PMTy = self.yPMT4 
-            T_radius = self.T4_radius; PMT_radius = self.PMT4_radius
-        else:
-            print("Incorrect scint number. Use 1 or 4")
-            return
+    def plot_particle_dist(self, *arg):
         rep = 1
         if arg:
             if (len(arg) > 0) and (arg[0] < 200):
                 print(f"Particles to simulate scintillation: {arg[0]:d}")
                 rep = int(arg[0])
-        print(f"Generating random particles {rep} times!")
+        print(f"Generating {rep} random particles!")
         points = np.zeros((1,3))
         lines = np.zeros((rep+1,2,3))
         for i in range(rep):
@@ -803,18 +800,18 @@ class Simulation:
         self.plot_full_apparatus(ax)
         ax.scatter(points[::100,0],points[::100,1],points[::100,2], color='green', marker='o', s=0.5)
         for i in range(rep):
-            ax.plot(lines[i,:,0],lines[i,:,1],lines[i,:,2], color='C3')
+            ax.plot(lines[i,:,0],lines[i,:,1],lines[i,:,2], color='C3', alpha=0.5)
+        ax.set_title(f'Sample Particle Distribution: {rep} particles')
         plt.show()
-
 
 if __name__ == '__main__':
     sim = Simulation()
     # sim.plot_scint(1,[0,0,0],1,True,100,1000)
     # sim.plot_scint(4,[0,0,0],1,True,100,2000)
-    sim.plot_particle_dist(4,25)
+    # sim.plot_particle_dist(100)
     # sim.artificial_gain = 2 # was 3
     # sim.num_particles = 5
-    # sim.run(5)
+    # sim.run(1)
     # sim.to_csv()
     # sim.ltspice(filedate='05_07_2023',filenum=20000)
     # sim.calc_ToF(filedate='05_07_2023',filenum=20000)
