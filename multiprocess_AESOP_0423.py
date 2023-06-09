@@ -49,7 +49,7 @@ class Simulation:
         self.mean_free_path_scints = 0.00024 #cm
         self.photons_produced_per_MeV = 10 # electrons
         self.pr_of_scintillation = 0.8
-        self.max_simulated_reflections = 16
+        self.max_simulated_reflections = 40
         self.pmt_electron_travel_time = 0 # approx 16 ns
         self.artificial_gain = 1 # gain factor
         self.pr_absorption = 0.1 # probability of white paint absorbing
@@ -313,12 +313,14 @@ class Simulation:
         theta = random.uniform(0,2*np.pi)             # first theta direction of photon
         phi = random.uniform(0,np.pi)                 # first phi   direction of photon
         PMT_hit_condition = False
+        total_dist = 0
         u = np.array([np.sin(phi)*np.cos(theta),np.sin(phi)*np.sin(theta),np.cos(phi)]) # first direction unit vector
         if keepdata: track_history[0,:] = [o[0],o[1],o[2],u[0],u[1],u[2],notabsorbed]
         i = 1
         while (i < N_max+1) & (not PMT_hit_condition) & (notabsorbed is True):
             ds, PMT_hit_condition = self.distance_solver(u, o, np.array([0,0,scint_plane[0]]),scint_radius, scint_plane, corner_center, corner_radius, pmt_center, pmt_radius)
             x, y, z = o+ds*u
+            total_dist += ds
             o = np.array([x, y, np.abs(z) if np.abs(z-scint_plane).any() < 1e-5 else z])
             t += np.abs(ds)/self.c                        # time taken in ps traveling in direction theta
     #         print(f"step {i}: ds={ds:.2f}cm dt={dt:.2f}ps Absorbed?={not notabsorbed} xyz =({x:.2f},{y:.2f},{z:.2f}) u=({u[0]:.2f},{u[1]:.2f},{u[2]:.2f})")
@@ -331,7 +333,7 @@ class Simulation:
         if keepdata:
             return PMT_hit_condition, t, track_history
         else:
-            return PMT_hit_condition, t, 1 # placeholder
+            return PMT_hit_condition, t, total_dist
 
     # PMT SIMULATION
     def photoElectrons(self, photons): # Main monte carlo
@@ -383,7 +385,7 @@ class Simulation:
         else:
             self.num_particles = 1
             print(f"Generating {self.num_particles} particle now...")
-        self.seperation_time = kwargs.get('delta_t', 1e6) # in ps
+        self.seperation_time = kwargs.get('delta_t', self.seperation_time) # in ps
         logstarttime = perf_counter()
         # FIND PARTICLE PATH
         times = np.zeros(1); points = np.zeros((1,3)); photons = np.zeros(1)
@@ -400,6 +402,8 @@ class Simulation:
         # SIMULATE EACH PHOTON PATH IN BOTH SCINTILLATORS
         T1_input_times = []
         T4_input_times = []
+        T1_prop_dist = []
+        T4_prop_dist = []
         pmt_hits = 0
         T1points = (points[1:])[points[1:,2] >= self.T1z]
         T1times = (times[1:])[points[1:,2] >= self.T1z]
@@ -412,13 +416,15 @@ class Simulation:
         with Pool(processes=cpu_count()) as pool:
             T1res = pool.starmap(self.scint_taskT1, tqdm(np.repeat(np.c_[T1points,T1times],T1photons.astype(int), axis=0),total=np.sum(T1photons)))
             T4res = pool.starmap(self.scint_taskT4, tqdm(np.repeat(np.c_[T4points,T4times],T4photons.astype(int), axis=0),total=np.sum(T4photons)))
-            for (T1hit_PMT, T1travel_time, _) in T1res:
+            for (T1hit_PMT, T1travel_time, T1tot_dist) in T1res:
                 if T1hit_PMT:
                     T1_input_times.append(T1travel_time)
+                    T1_prop_dist.append(T1tot_dist)
                     pmt_hits +=1
-            for (T4hit_PMT, T4travel_time, _) in T4res:
+            for (T4hit_PMT, T4travel_time, T4tot_dist) in T4res:
                 if T4hit_PMT:
                     T4_input_times.append(T4travel_time)
+                    T4_prop_dist.append(T4tot_dist)
                     pmt_hits +=1
         logendtime = perf_counter()
         # PRINT RESULTS
@@ -431,8 +437,10 @@ class Simulation:
         print(f"Total Time Elapsed:         {ttime[0]}days {ttime[1]}hrs {ttime[2]}mins {ttime[3]}s")
         print("RESULTS:")
         print("HITS on T1",len(T1_input_times))
-        # print(T1_input_times)
+        print("RATIO T1 of total photons to total incident photons", np.sum(T1photons), len(T1_input_times), f"ratio={np.sum(T1photons)/len(T1_input_times):.2f}")
         print("HITS on T4",len(T4_input_times))
+        print("RATIO T4 of total photons to total incident photons", np.sum(T4photons), len(T4_input_times), f"ratio={np.sum(T4photons)/len(T4_input_times):.2f}")
+        del T1points; del T1times; del T1photons; del T4points; del T4times; del T4photons; # remove unused variables
         # print(T4_input_times)
         # BEGIN SIMULATING PMT PULSE
         signals_channelT1 = []
@@ -827,15 +835,74 @@ class Simulation:
             ax.plot(lines[i,:,0],lines[i,:,1],lines[i,:,2], color='C3', alpha=0.5)
         ax.set_title(f'Sample Particle Distribution: {rep} particles')
         plt.show()
+        
+    def plot_PE_ratio(self, rep, *arg):
+        T1incphoton_ratio = np.zeros(rep)
+        T4incphoton_ratio = np.zeros(rep)
+        particle = np.zeros((1,2,3)) 
+        # [[[time , photons, empty ]
+        #  [x    , y      , z     ]]]
+        # times = np.zeros(1); points = np.zeros((1,3)); photons = np.zeros(1)
+        with Pool(processes=cpu_count()-1) as pool:
+            res = pool.map(self.particle_task, range(rep))
+            for (time_i, point_i, photon_i) in res:
+                print(time_i.shape, point_i.shape, photon_i.shape)
+                particle = np.concatenate((particle, [[time_i, photon_i, 0.0], point_i.flatten()]), axis=0)
+                # times = np.concatenate((times, time_i), axis=0)
+                # points = np.concatenate((points,point_i), axis=0)
+                # photons = np.concatenate((photons,photon_i), axis=0)
+        N = np.sum(particle[:,0,1])
+        print("Photons generated", N)
+
+        # # SIMULATE EACH PHOTON PATH IN BOTH SCINTILLATORS
+        # T1_input_times = []
+        # T4_input_times = []
+        # T1_prop_dist = []
+        # T4_prop_dist = []
+        # pmt_hitsT1 = 0
+        # pmt_hitsT4 = 0
+        # T1points = (points[1:])[points[1:,2] >= self.T1z]
+        # T1times = (times[1:])[points[1:,2] >= self.T1z]
+        # T1photons = (photons[1:])[points[1:,2] >= self.T1z]
+        # T4points = (points[1:])[points[1:,2] < self.T1z]
+        # T4times = (times[1:])[points[1:,2] < self.T1z]
+        # T4photons = (photons[1:])[points[1:,2] < self.T1z]
+        # print(f"Photons in T1: {np.sum(T1photons)} and Photons in T4: {np.sum(T4photons)}")
+        # with Pool(processes=cpu_count()) as pool:
+        #     T1res = pool.starmap(self.scint_taskT1, tqdm(np.repeat(np.c_[T1points,T1times],T1photons.astype(int), axis=0),total=np.sum(T1photons)))
+        #     T4res = pool.starmap(self.scint_taskT4, tqdm(np.repeat(np.c_[T4points,T4times],T4photons.astype(int), axis=0),total=np.sum(T4photons)))
+        #     for (T1hit_PMT, T1travel_time, T1tot_dist) in T1res:
+        #         if T1hit_PMT:
+        #             T1_input_times.append(T1travel_time)
+        #             T1_prop_dist.append(T1tot_dist)
+        #             pmt_hitsT1 +=1
+        #     for (T4hit_PMT, T4travel_time, T4tot_dist) in T4res:
+        #         if T4hit_PMT:
+        #             T4_input_times.append(T4travel_time)
+        #             T4_prop_dist.append(T4tot_dist)
+        #             pmt_hitsT4 +=1
+        # T1incphoton_ratio[i] = pmt_hitsT1/len(T1photons)
+        # T4incphoton_ratio[i] = pmt_hitsT4/len(T4photons)
+        import matplotlib.pyplot as plt
+        fig = plt.figure(figsize=(6,6))
+        ax = fig.add_subplot(111)
+        ax.hist(T1incphoton_ratio, bins=50, label='T1 ratio')
+        ax.hist(T4incphoton_ratio, bins=50, label='T4 ratio')
+        ax.set_title(f'Incident Photon distribution: {rep} particles')
+        plt.show()
+            
+        
+        
 
 if __name__ == '__main__':
     sim = Simulation()
     # sim.plot_scint(1,[0,0,0],1,True,100,2000)
-    sim.plot_scint(4,[0,0,0],1,True,100,2000)
+    # sim.plot_scint(4,[0,0,0],1,True,100,2000)
     # sim.plot_particle_dist(100)
     # sim.artificial_gain = 2 # was 3
     # sim.num_particles = 5
-    # sim.run(1)
+    # sim.run(5)
+    sim.plot_PE_ratio(5)
     # sim.to_csv()
     # sim.ltspice(filedate='05_07_2023',filenum=20000)
     # sim.calc_ToF(filedate='05_07_2023',filenum=20000)
