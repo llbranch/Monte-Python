@@ -23,20 +23,20 @@ class Simulation:
         # CONSTRAINT n_1 <= n_2
         self.n_1 = 1.000293 # Sample index of refraction of air
         self.n_2 = 1.58 # 1.58 for EJ-200
-        self.t_rise = 800 #ps 
         self.T3z=0 #cm is the bottom of T3
         self.T1z=33.782 #cm is the bottom of T1
         self.T4z=-28.07297 #cm is the bottom of T4
         self.T1_radius = 13 #cm
         self.T4_radius = 18 #cm 
+        self.T1_width = 0.5 #cm
+        self.T4_width = 1 #cm
         self.xPMT4=9.5*np.cos(np.radians(110))*2.54
         self.yPMT4=9.5*np.sin(np.radians(110))*2.54
-        self.xPMT1=8.*np.cos(np.radians(-45))*2.54
-        self.yPMT1=8.*np.sin(np.radians(-45))*2.54
+        self.xPMT1=8.*np.cos(np.radians(-45))*2.54 # x2PMT1=8.*np.cos(np.radians(-53.72))*2.54 For test
+        self.yPMT1=8.*np.sin(np.radians(-45))*2.54 # y2PMT1=8.*np.sin(np.radians(-53.72))*2.54 For test
         self.PMT1_radius = 4.6/2 #cm 
         self.PMT4_radius = 4.6/2 #cm 
-        # x2PMT1=8.*np.cos(np.radians(-53.72))*2.54 For test
-        # y2PMT1=8.*np.sin(np.radians(-53.72))*2.54 For test
+        
         self.n_dynodes = 8
         self.V = np.linspace(150,850,self.n_dynodes)
         # self.V = [150,300,350,600,750,850]
@@ -44,18 +44,18 @@ class Simulation:
         self.QE = 1 #0.23
         self.t_initial = 0 #ps
         self.particle_init_angle_range = 40 #degrees
-        self.T1_width = 0.5 #cm
-        self.T4_width = 1 #cm
-        self.mean_free_path_scints = 0.00024 #cm
-        self.photons_produced_per_MeV = 10 # electrons
+        self.particle_gen_area = self.T1_radius/2
+        self.particle_gen_z = self.T1z+self.T1_width + 2 #cm
+        self.mean_free_path_scints = 8e-5 #cm or 80 micro meters
+        self.photons_produced_per_MeV = 10 # true value is closer to 10000 per 1MeV
         self.pr_of_scintillation = 0.8
         self.max_simulated_reflections = 40
         self.pmt_electron_travel_time = 0 # approx 16 ns
         self.artificial_gain = 1 # gain factor
-        self.pr_absorption = 0.1 # probability of white paint absorbing
+        self.pr_absorption = 0.1 # probability of boundary absorbing
         self.seperation_time = 1e5 # ps 
         self.output_bin_width = 100 # ps
-        self.num_particles = 1 # Muons
+        self.num_particles = 1 # default Muons
         self.CMOS_thresh = 1.5 # V
         self.reemission_angle_factor = 0.9 # range [0,1] --> cone from [-pi,pi]
         
@@ -109,33 +109,29 @@ class Simulation:
     #     over |D|^2
     # ARGUMENTS : # 3d directional vector, 3d point, center of scintillator, radius of scintillator, use corner circle boolean
     def distance_circle(self, u, o, center, radius, quadrant=False): 
-        P = o
-        D = u*-1 if np.dot(u,P) < 0 else u # does a normalized vector in 3d equate to normalized vector in 2d?
-        C = center
-        R = radius
-        bigDelta = np.array(P)-np.array(C)
-
+        cond = np.dot(u,o) < 0
+        D = u*-1 if cond else u # does a normalized vector in 3d equate to normalized vector in 2d?
+        bigDelta = np.array(o)-np.array(center)
         magDsq = self.mag(D)**2
         magDeltasq = self.mag(bigDelta)**2
         DdotDelta = np.dot(D,bigDelta)
-        if DdotDelta**2 - magDsq * (magDeltasq - R**2) < 0:
+        if DdotDelta**2 - magDsq * (magDeltasq - radius**2) < 0:
             return 100 # some large value that won't be chosen because photon has no intersection with circle
-        sqrt_term = np.sqrt(DdotDelta**2 - magDsq * (magDeltasq - R**2))/magDsq
+        sqrt_term = np.sqrt(DdotDelta**2 - magDsq * (magDeltasq - radius**2))/magDsq
         b_term = -DdotDelta/magDsq
         rootA = b_term - sqrt_term
         rootB = b_term + sqrt_term
-        if quadrant is not False: # if in corner don't use the other 3/4ths of the circle to find distance only 4th quadrant part
+        if quadrant is not False: # if in corner don't use the other 3/4ths of the circle to find distance only 2nd or 4th quadrant part
             return np.abs(rootA) if np.abs(rootA) > np.abs(rootB) else np.abs(rootB)
-        return np.abs(rootA) if (rootA < 0) & (np.dot(u,P) < 0) else np.abs(rootB)
+        return np.abs(rootA) if (rootA < 0) & cond else np.abs(rootB)
 
     # ARGUMENTS : 3d directional vector, 3d point, z positions of planes bottom and top, plane dimension number
     def distance_plane(self, u, o, plane, dim):                                     
-        P = o
         if dim==2:
             d_plane = plane[0] if u[dim] < 0 else plane[1]                    # make sure direction matches location of plane 
         else:
             d_plane = plane
-        return np.abs((d_plane - P[dim])/u[dim])
+        return np.abs((d_plane - o[dim])/u[dim])
 
 
     # SOLVE FOR DISTANCE LOGIC FUNCTION
@@ -181,25 +177,25 @@ class Simulation:
             # into scintillator with random direction given by random angles Phi_3, Theta_3
             # with constraint of z coordinate entering
     def photon_interaction(self, u, n):
-        u_r = u - 2*np.dot(u, n)*n                      # u_new = u - 2 (u . n)*n
+        u_r = u - 2*np.dot(u, n)*n                              # u_new = u - 2 (u . n)*n
         v = u*-1 if np.dot(u,n) < 0 else u
         theta = np.arcsin(self.mag(np.cross(v,n))/(self.mag(u)*self.mag(n)))
         inside_sqrt = ((self.n_1/self.n_2)*np.sin(theta))**2
-        sqrt_term = np.sqrt(1 - inside_sqrt)            # cos(theta)_transmission
+        sqrt_term = np.sqrt(1 - inside_sqrt)                    # cos(theta)_transmission
         Rs = np.abs((self.n_1*np.cos(theta) - self.n_2*sqrt_term)/(self.n_1*np.cos(theta) + self.n_2*sqrt_term))**2
         Rp = np.abs((self.n_1*sqrt_term - self.n_2*np.cos(theta))/(self.n_1*sqrt_term + self.n_2*np.cos(theta)))**2
-                                                        # Determine probability of reflectance
-        if np.random.random() < ((Rs+Rp)/2):            # if random chance is high enough reflect !
-            return self.normalize(u_r), True                 # return full internal reflection and not absorbed is True
-                                                        # else photon is transmitted to white paint
-        elif np.random.random() < self.pr_absorption:                 # does it get absorbed? change probability when you get more data
-            return self.normalize(u_r), False                # not absorbed is False
-        else:                                           # no it didn't get absorbed!
-            theta_new = random.uniform(-np.pi/2,np.pi/2)       # new theta direction of photon
-            phi_new = random.uniform(-np.pi, np.pi)           # new phi   direction of photon
+                                                                # Determine probability of reflectance
+        if np.random.random() < ((Rs+Rp)/2):                    # if random chance is high enough reflect !
+            return self.normalize(u_r), True                        # return full internal reflection and not absorbed is True
+                                                                # else photon is transmitted to white paint
+        elif np.random.random() < self.pr_absorption:               # does it get absorbed? change probability when you get more data
+            return self.normalize(u_r), False                       # not absorbed is False
+        else:                                                   # no it didn't get absorbed!
+            theta_new = random.uniform(-np.pi/2,np.pi/2)            # new theta direction of photon
+            phi_new = random.uniform(-np.pi, np.pi)                 # new phi   direction of photon
             new_u = self.normalize(np.array([np.sin(phi_new)*np.cos(theta_new),np.sin(phi_new)*np.sin(theta_new),np.cos(phi_new)]))
             u_r = self.reemission_angle_factor*new_u + n
-            return self.normalize(u_r), True            # new small change in direction (should be random), and not absorbed is True
+            return self.normalize(u_r), True                        # new small change in direction (should be random), and not absorbed is True
 
     # Calculate n vector for all planes and surfaces in apparatus
     def n_vec_calculate(self, o, scint_plane, light_guide_planes, corner_center, corner_radius):
@@ -233,17 +229,17 @@ class Simulation:
         #                walk mean free path length and store position if still within scintillator
 
     def particle_path(self, t, phi_range_deg, T1_z, T1_width, T4_z, T4_width, T1_radius, T4_radius, T1_corner, T4_corner, mean_free_path, photons_per_E, prob_scint):
-        theta = random.uniform(0,2*np.pi)                                                 # random theta in circle above T1
+        theta = random.uniform(0,2*np.pi)                                                     # random theta in circle above T1
         phi = random.uniform(np.pi-phi_range_deg*np.pi/180/2,np.pi+phi_range_deg*np.pi/180/2) # phi angle pointing in -k given phi range
-        maxdist = np.random.random()*T1_radius/2                                          # half the radius of T1
+        maxdist = np.random.random()*self.particle_gen_area                                   # radius of generation
         round_const = self.round_to_sig(mean_free_path)
-        o = np.float64((maxdist*np.cos(theta), maxdist*np.sin(theta), T1_z+T1_width+2))   # x, y, top of T1_z+2
+        o = np.float64((maxdist*np.cos(theta), maxdist*np.sin(theta), self.particle_gen_z))   # x, y, z of new particle
         u = np.array((np.cos(theta)*np.sin(phi),np.sin(theta)*np.sin(phi),np.cos(phi)),dtype=np.float64)
         # print(f"u=({u[0]:.2f},{u[1]:.2f},{u[2]:.2f})")
-        photons = [0]                                                                     # begin photon array
-        points = [o]                                                                      # current point 
-        times = [t]                                                                       # current t 
-        cur_o = points[-1]                                                                 # current z 
+        photons = [0]                                                                         # begin photon array
+        points = [o]                                                                          # current point 
+        times = [t]                                                                           # current t 
+        cur_o = points[-1]                                                                    # current z 
         next_o = (cur_o+mean_free_path*u).round(round_const)                                  # next z step
         inside_scint = False
         missed = 0
@@ -273,17 +269,17 @@ class Simulation:
                 # print(f"inside_T1={inside_T1} inside_T4={inside_T4}")
                 # print("outer whileloop", scint_cond, next_o, dist, T4_z)          
                 if scint_cond:
-                    t +=  dist/self.c     # calculate time in ps passed
+                    t +=  dist/self.c                                              # calculate time in ps passed
                     times.append(t)
                     points.append(points[-1]+dist*u+mean_free_path*u)
                     phot = np.random.poisson(photons_per_E)
                     if np.random.random() < prob_scint: photons.append(phot)
                     else: photons.append(0)
-                    cur_o = points[-1]                                     # current point 
+                    cur_o = points[-1]                                             # current point 
                     next_o = (cur_o+mean_free_path*u).round(round_const)           # next point
                     # print("z",cur_o[2],"z_1",next_o[2])
                     inside_scint = True
-                else: # missed a scintillator / lightguide so throw away and restart
+                else:                                                              # missed a scintillator / lightguide so throw away and restart
                     # print("missed!")
                     missed = True
                     inside_scint = False
@@ -298,8 +294,8 @@ class Simulation:
                     phot = np.random.poisson(photons_per_E)
                     if np.random.random() < prob_scint: photons.append(phot)
                     else: photons.append(0)
-                    cur_o = points[-1]                                                                 # current z 
-                    next_o = (cur_o+mean_free_path*u).round(round_const)
+                    cur_o = points[-1]                                             # current point 
+                    next_o = (cur_o+mean_free_path*u).round(round_const)           # next point
                     inside_scint = (next_o[2] <= (Ttop)) & (next_o[2] >= Tbottom) & (self.scint_condition(next_o, Tradius, num) | self.lg_condition(next_o, Tcorner, num))
         # print(f"time elapsed in scintillators: {np.abs(times[1]-times[-1]):.2f}ps total scintillation points: {len(points[1:])}")
         return np.array(times, dtype=np.float64)[1:], np.array(points, dtype=np.float64)[1:], np.array(photons[1:], dtype=np.float64)
@@ -320,7 +316,7 @@ class Simulation:
         while (i < N_max+1) & (not PMT_hit_condition) & (notabsorbed is True):
             ds, PMT_hit_condition = self.distance_solver(u, o, np.array([0,0,scint_plane[0]]),scint_radius, scint_plane, corner_center, corner_radius, pmt_center, pmt_radius)
             x, y, z = o+ds*u
-            total_dist += ds
+            total_dist += self.mag(ds*u[0:2])
             o = np.array([x, y, np.abs(z) if np.abs(z-scint_plane).any() < 1e-5 else z])
             t += np.abs(ds)/self.c                        # time taken in ps traveling in direction theta
     #         print(f"step {i}: ds={ds:.2f}cm dt={dt:.2f}ps Absorbed?={not notabsorbed} xyz =({x:.2f},{y:.2f},{z:.2f}) u=({u[0]:.2f},{u[1]:.2f},{u[2]:.2f})")
@@ -402,8 +398,8 @@ class Simulation:
         # SIMULATE EACH PHOTON PATH IN BOTH SCINTILLATORS
         T1_input_times = []
         T4_input_times = []
-        T1_prop_dist = []
-        T4_prop_dist = []
+        self.T1_prop_dist = []
+        self.T4_prop_dist = []
         pmt_hits = 0
         T1points = (points[1:])[points[1:,2] >= self.T1z]
         T1times = (times[1:])[points[1:,2] >= self.T1z]
@@ -414,17 +410,22 @@ class Simulation:
         print(f"Photons in T1: {np.sum(T1photons)} and Photons in T4: {np.sum(T4photons)}")
         logstartphoton = perf_counter()
         with Pool(processes=cpu_count()) as pool:
-            T1res = pool.starmap(self.scint_taskT1, tqdm(np.repeat(np.c_[T1points,T1times],T1photons.astype(int), axis=0),total=np.sum(T1photons)))
-            T4res = pool.starmap(self.scint_taskT4, tqdm(np.repeat(np.c_[T4points,T4times],T4photons.astype(int), axis=0),total=np.sum(T4photons)))
+            print("T1 Photon Propagation working...", end='\r')
+            T1res = pool.starmap(self.scint_taskT1, np.repeat(np.c_[T1points,T1times],T1photons.astype(int), axis=0))
+            print("T1 Photon Propagation done.     ")
+            print("T4 Photon Propagation working...", end='\r')
+            T4res = pool.starmap(self.scint_taskT4, np.repeat(np.c_[T4points,T4times],T4photons.astype(int), axis=0))
+            print("T4 Photon Propagation done.     ")
+            print("Unzipping reuslts into arrays...")
             for (T1hit_PMT, T1travel_time, T1tot_dist) in T1res:
                 if T1hit_PMT:
                     T1_input_times.append(T1travel_time)
-                    T1_prop_dist.append(T1tot_dist)
+                    self.T1_prop_dist.append(T1tot_dist)
                     pmt_hits +=1
             for (T4hit_PMT, T4travel_time, T4tot_dist) in T4res:
                 if T4hit_PMT:
                     T4_input_times.append(T4travel_time)
-                    T4_prop_dist.append(T4tot_dist)
+                    self.T4_prop_dist.append(T4tot_dist)
                     pmt_hits +=1
         logendtime = perf_counter()
         # PRINT RESULTS
@@ -435,11 +436,12 @@ class Simulation:
         print(f"Generation of Particles     {pgtime[0]}days {pgtime[1]}hrs {pgtime[2]}mins {pgtime[3]}s")
         print(f"Simulation of Photon Travel {phtime[0]}days {phtime[1]}hrs {phtime[2]}mins {phtime[3]}s")
         print(f"Total Time Elapsed:         {ttime[0]}days {ttime[1]}hrs {ttime[2]}mins {ttime[3]}s")
-        print("RESULTS:")
+        print("RESULTS SUMMARY:")
         print("HITS on T1",len(T1_input_times))
-        print("RATIO T1 of total photons to total incident photons", np.sum(T1photons), len(T1_input_times), f"ratio={np.sum(T1photons)/len(T1_input_times):.2f}")
+        print("RATIO T1   total photons", np.sum(T1photons), "total incident photons", len(T1_input_times), f"ratio={np.sum(T1photons)/len(T1_input_times):.2f}")
         print("HITS on T4",len(T4_input_times))
-        print("RATIO T4 of total photons to total incident photons", np.sum(T4photons), len(T4_input_times), f"ratio={np.sum(T4photons)/len(T4_input_times):.2f}")
+        print("RATIO T4   total photons ", np.sum(T4photons),"total incident photons", len(T4_input_times), f"ratio={np.sum(T4photons)/len(T4_input_times):.2f}")
+        print("DISTANCE: ")
         del T1points; del T1times; del T1photons; del T4points; del T4times; del T4photons; # remove unused variables
         # print(T4_input_times)
         # BEGIN SIMULATING PMT PULSE
@@ -664,7 +666,7 @@ class Simulation:
     def plotToF(self):
         import matplotlib.pyplot as plt
         plt.title(f'TOF, Total Points {len(self.FinalToF)}')
-        plt.hist(self.FinalToF, bins=np.linspace(0,5e-9,125), histtype='step', edgecolor='k', linewidth=2)
+        plt.hist(self.FinalToF, bins=np.linspace(0,10e-9,125), histtype='step', edgecolor='k', linewidth=2)
         plt.axvline(np.mean(self.FinalToF), label=f'$\mu$={np.mean(self.FinalToF):.2e}', color='C1')
         plt.grid()
         plt.legend()
@@ -725,6 +727,7 @@ class Simulation:
             photon_pos = point_i[i]; input_time = time_i[i]
             print(f"pos=({photon_pos[0]:.2f},{photon_pos[1]:.2f},{photon_pos[2]:.2f}) at t={input_time:.2f}ps")
         j = 0
+        hit_PMT = 0
         tracks = []
         # Search for PMT_hit (or up to limit rep)
         while j < rep:
@@ -732,7 +735,7 @@ class Simulation:
                                                             scint_plane=np.array([Tz,Tz+T_width]), scint_width=T_width, 
                                                             light_guide_planes=[sign*T_radius,sign*-T_radius], 
                                                             pmt_center=[sign*(T_radius-4*0.5),sign*(-T_radius+4*0.5),Tz], pmt_radius=PMT_radius,
-                                                            N_max=self.max_simulated_reflections, dt=input_time, keepdata=True)
+                                                            N_max=self.max_simulated_reflections, t=input_time, keepdata=True)
             j += 1
             if hit_PMT: # hit_PMT original condition
                 break
@@ -741,12 +744,6 @@ class Simulation:
         fig = plt.figure(figsize=(6,6))
         ax = fig.add_subplot(111,projection='3d')
         self.plot_full_apparatus(ax, scint)
-        # print(tracks[0:3,3:6])
-        # print(np.sum(tracks[0:3,3:6], axis=1))
-        # for i in range(len(tracks)):
-        #     tracks[i,3:6] /= np.linalg.norm(tracks[i,3:6],ord=1)
-        # print(tracks[0:3,3:6])
-        # print(np.sum(tracks[0:3,3:6], axis=1))
         for x1,y1,z1,u1,v1,w1,l in zip(tracks[:-1,0],tracks[:-1,1],tracks[:-1,2], tracks[:-1,3], tracks[:-1,4],tracks[:-1,5],np.linalg.norm(tracks[:-1,3:6],ord=2, axis=1)):
             ax.quiver(x1, y1, z1, u1, v1, w1, length=l*0.5, edgecolor='k', facecolor='black')
         ax.plot(tracks[:,0],tracks[:,1],tracks[:,2], alpha=0.5, color='C1', marker='.')
@@ -836,63 +833,98 @@ class Simulation:
         ax.set_title(f'Sample Particle Distribution: {rep} particles')
         plt.show()
         
-    def plot_PE_ratio(self, rep, *arg):
-        T1incphoton_ratio = np.zeros(rep)
-        T4incphoton_ratio = np.zeros(rep)
-        particle = np.zeros((1,2,3)) 
-        # [[[time , photons, empty ]
-        #  [x    , y      , z     ]]]
-        # times = np.zeros(1); points = np.zeros((1,3)); photons = np.zeros(1)
+    def plot_gen_PE(self, rep):
+        times = np.zeros(1); points = np.zeros((1,3)); photons = np.zeros(1); particle_ids = np.zeros(1) 
         with Pool(processes=cpu_count()-1) as pool:
             res = pool.map(self.particle_task, range(rep))
-            for (time_i, point_i, photon_i) in res:
-                print(time_i.shape, point_i.shape, photon_i.shape)
-                particle = np.concatenate((particle, [[time_i, photon_i, 0.0], point_i.flatten()]), axis=0)
-                # times = np.concatenate((times, time_i), axis=0)
-                # points = np.concatenate((points,point_i), axis=0)
-                # photons = np.concatenate((photons,photon_i), axis=0)
-        N = np.sum(particle[:,0,1])
+            for i,(time_i, point_i, photon_i) in enumerate(res):
+                print(time_i.shape, point_i.shape, photon_i.shape, np.repeat(i, len(time_i)).shape)
+                particle_ids = np.concatenate((particle_ids,np.repeat(i, len(time_i))),axis=0)
+                times = np.concatenate((times, time_i), axis=0)
+                points = np.concatenate((points,point_i), axis=0)
+                photons = np.concatenate((photons,photon_i), axis=0)
+        N = np.sum(photons)
         print("Photons generated", N)
-
-        # # SIMULATE EACH PHOTON PATH IN BOTH SCINTILLATORS
-        # T1_input_times = []
-        # T4_input_times = []
-        # T1_prop_dist = []
-        # T4_prop_dist = []
-        # pmt_hitsT1 = 0
-        # pmt_hitsT4 = 0
-        # T1points = (points[1:])[points[1:,2] >= self.T1z]
-        # T1times = (times[1:])[points[1:,2] >= self.T1z]
-        # T1photons = (photons[1:])[points[1:,2] >= self.T1z]
-        # T4points = (points[1:])[points[1:,2] < self.T1z]
-        # T4times = (times[1:])[points[1:,2] < self.T1z]
-        # T4photons = (photons[1:])[points[1:,2] < self.T1z]
-        # print(f"Photons in T1: {np.sum(T1photons)} and Photons in T4: {np.sum(T4photons)}")
-        # with Pool(processes=cpu_count()) as pool:
-        #     T1res = pool.starmap(self.scint_taskT1, tqdm(np.repeat(np.c_[T1points,T1times],T1photons.astype(int), axis=0),total=np.sum(T1photons)))
-        #     T4res = pool.starmap(self.scint_taskT4, tqdm(np.repeat(np.c_[T4points,T4times],T4photons.astype(int), axis=0),total=np.sum(T4photons)))
-        #     for (T1hit_PMT, T1travel_time, T1tot_dist) in T1res:
-        #         if T1hit_PMT:
-        #             T1_input_times.append(T1travel_time)
-        #             T1_prop_dist.append(T1tot_dist)
-        #             pmt_hitsT1 +=1
-        #     for (T4hit_PMT, T4travel_time, T4tot_dist) in T4res:
-        #         if T4hit_PMT:
-        #             T4_input_times.append(T4travel_time)
-        #             T4_prop_dist.append(T4tot_dist)
-        #             pmt_hitsT4 +=1
-        # T1incphoton_ratio[i] = pmt_hitsT1/len(T1photons)
-        # T4incphoton_ratio[i] = pmt_hitsT4/len(T4photons)
+        # SIMULATE EACH PHOTON PATH IN BOTH SCINTILLATORS
+        T1_input_times = []
+        T4_input_times = []
+        T1_prop_dist = []
+        T4_prop_dist = []
+        T1_output_id = []
+        T4_output_id = []
+        pmt_hitsT1 = 0
+        pmt_hitsT4 = 0
+        T1points = (points[1:])[points[1:,2] >= self.T1z]
+        T1times = (times[1:])[points[1:,2] >= self.T1z]
+        T1photons = (photons[1:])[points[1:,2] >= self.T1z]
+        T1part_ids = (particle_ids[1:])[points[1:,2] >= self.T1z]
+        T4points = (points[1:])[points[1:,2] < self.T1z]
+        T4times = (times[1:])[points[1:,2] < self.T1z]
+        T4photons = (photons[1:])[points[1:,2] < self.T1z]
+        T4part_ids = (particle_ids[1:])[points[1:,2] < self.T1z]
+        T1part_ids = np.repeat(T1part_ids, T1photons.astype(int),axis=0)
+        T4part_ids = np.repeat(T4part_ids, T4photons.astype(int),axis=0)
+        del times; del points; del photons;
+        print(f"Photons in T1: {np.sum(T1photons)} and Photons in T4: {np.sum(T4photons)}")
+        with Pool(processes=cpu_count()) as pool:
+            T1res = pool.starmap(self.scint_taskT1, tqdm(np.repeat(np.c_[T1points,T1times],T1photons.astype(int), axis=0),total=np.sum(T1photons)))
+            T4res = pool.starmap(self.scint_taskT4, tqdm(np.repeat(np.c_[T4points,T4times],T4photons.astype(int), axis=0),total=np.sum(T4photons)))
+            for (T1hit_PMT, T1travel_time, T1tot_dist), T1part_id in zip(T1res, T1part_ids):
+                if T1hit_PMT:
+                    T1_input_times.append(T1travel_time)
+                    T1_prop_dist.append(T1tot_dist)
+                    T1_output_id.append(T1part_id)
+                    pmt_hitsT1 +=1
+            for (T4hit_PMT, T4travel_time, T4tot_dist), T4part_id in zip(T4res, T4part_ids):
+                if T4hit_PMT:
+                    T4_input_times.append(T4travel_time)
+                    T4_prop_dist.append(T4tot_dist)
+                    T4_output_id.append(T4part_id)
+                    pmt_hitsT4 +=1
+        
+        _, T1cnts = np.unique(T1part_ids, return_counts=True)
+        _, T4cnts = np.unique(T4part_ids, return_counts=True)
+        _, T1output_cnts = np.unique(T1_output_id, return_counts=True)
+        _, T4output_cnts = np.unique(T4_output_id, return_counts=True)
         import matplotlib.pyplot as plt
-        fig = plt.figure(figsize=(6,6))
-        ax = fig.add_subplot(111)
-        ax.hist(T1incphoton_ratio, bins=50, label='T1 ratio')
-        ax.hist(T4incphoton_ratio, bins=50, label='T4 ratio')
-        ax.set_title(f'Incident Photon distribution: {rep} particles')
+        fig0, ax0 = plt.subplots()
+        ax0.set_title(f'Photon Generation distribution T1: {rep} particles')
+        ax0.hist(T1cnts, bins=np.linspace(int(np.mean(T1cnts)-np.std(T1cnts)*2),int(np.mean(T1cnts)+np.std(T1cnts)*2),50), alpha=0.5, label='T1 Count')
+        plt.show()
+        fig1, ax1 = plt.subplots()
+        ax1.set_title(f'Photon Generation distribution T4: {rep} particles')
+        ax1.hist(T4cnts, bins=np.linspace(int(np.mean(T4cnts)-np.std(T4cnts)*2),int(np.mean(T4cnts)+np.std(T4cnts)*2),50), alpha=0.5,label='T1 Count')
+        ax1.legend()
+        plt.show()
+        fig2, ax2 = plt.subplots()
+        ax2.set_title(f'Incident Photon distribution: {min(len(T1cnts),len(T4cnts))}/{rep} particles')
+        photonbins = np.linspace(int(np.mean(T1output_cnts)-np.std(T1output_cnts)*2),int(np.mean(T4output_cnts)+np.std(T4output_cnts)),50)
+        ax2.hist(T1output_cnts, bins=photonbins, alpha=0.5, label='T4 Count')
+        ax2.hist(T4output_cnts, bins=photonbins, alpha=0.5, label='T4 Count')
+        ax2.legend()
         plt.show()
             
-        
-        
+    def plot_xydistance_distr(self):
+        if hasattr(self, 'T1_prop_dist') & hasattr(self, 'T4_prop_dist'):
+            import matplotlib.pyplot as plt
+            fig0, ax0 = plt.subplots(1,2)
+            fig0.set_size_inches(12,6)
+            bins = np.linspace(0,40,125)
+            ax0[0].hist(self.T1_prop_dist, bins=bins, histtype='step', edgecolor='k')
+            ax0[0].axvline(self.T1_radius, label='T1 radius')
+            ax0[0].set_xlabel('Distance [cm]')
+            ax0[0].set_ylabel('Entries')
+            ax0[0].set_title('T1 Propagation XY Distance Distribution')
+            ax0[0].legend()
+            ax0[1].hist(self.T4_prop_dist, bins=bins, histtype='step', edgecolor='k')
+            ax0[1].axvline(self.T4_radius, label='T4 radius')
+            ax0[1].set_xlabel('Distance [cm]')
+            ax0[1].set_ylabel('Entries')
+            ax0[1].set_title('T4 Propagation XY Distance Distribution')
+            ax0[1].legend()
+            plt.show()
+        else:
+            print("Need to run simulation first with sim.run()")
 
 if __name__ == '__main__':
     sim = Simulation()
@@ -901,8 +933,10 @@ if __name__ == '__main__':
     # sim.plot_particle_dist(100)
     # sim.artificial_gain = 2 # was 3
     # sim.num_particles = 5
-    # sim.run(5)
-    sim.plot_PE_ratio(5)
+    sim.max_simulated_reflections = 40
+    sim.run(10)
+    sim.plot_xydistance_distr()
+    # sim.plot_gen_PE(10)
     # sim.to_csv()
     # sim.ltspice(filedate='05_07_2023',filenum=20000)
     # sim.calc_ToF(filedate='05_07_2023',filenum=20000)
