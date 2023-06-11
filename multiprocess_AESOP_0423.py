@@ -313,8 +313,8 @@ class Simulation:
         total_dist = 0
         u = np.array([np.sin(phi)*np.cos(theta),np.sin(phi)*np.sin(theta),np.cos(phi)]) # first direction unit vector
         if keepdata: track_history[0,:] = [o[0],o[1],o[2],u[0],u[1],u[2],notabsorbed]
-        i = 1
-        while (i < N_max+1) & (not PMT_hit_condition) & (notabsorbed is True):
+        i = 0
+        while (i < N_max) & (not PMT_hit_condition) & (notabsorbed is True):
             ds, PMT_hit_condition = self.distance_solver(u, o, np.array([0,0,scint_plane[0]]),scint_radius, scint_plane, corner_center, corner_radius, pmt_center, pmt_radius)
             x, y, z = o+ds*u
             total_dist += self.mag(ds*u[0:2])
@@ -323,10 +323,10 @@ class Simulation:
     #         print(f"step {i}: ds={ds:.2f}cm dt={dt:.2f}ps Absorbed?={not notabsorbed} xyz =({x:.2f},{y:.2f},{z:.2f}) u=({u[0]:.2f},{u[1]:.2f},{u[2]:.2f})")
             n = self.n_vec_calculate(o, scint_plane, light_guide_planes, corner_center, corner_radius)
             u, notabsorbed = self.photon_interaction(u, n)
-            if keepdata: track_history[i] = [x,y,z,u[0],u[1],u[2],notabsorbed]
+            if keepdata: track_history[i+1] = [x,y,z,u[0],u[1],u[2],notabsorbed]
             i+=1
-        if keepdata & (i < N_max+1):
-            track_history = track_history[:i,:]
+        if keepdata & (i < N_max):
+            track_history = track_history[:i+1,:]
         if keepdata:
             return PMT_hit_condition, t, track_history
         else:
@@ -411,7 +411,6 @@ class Simulation:
         self.T4_prop_times = []
         self.T1_interactions = []
         self.T4_interactions = []
-        pmt_hits = 0
         T1points = (points[1:])[points[1:,2] >= self.T1z]
         T1times = (times[1:])[points[1:,2] >= self.T1z]
         T1photons = (photons[1:])[points[1:,2] >= self.T1z]
@@ -436,7 +435,6 @@ class Simulation:
                     self.T1_endpoint_dist.append(T1endpt)
                     self.T1_prop_times.append(T1tot_dist/self.c)
                     self.T1_interactions.append(T1bounces)
-                    pmt_hits +=1
             for (T4hit_PMT, T4travel_time, T4tot_dist, T4endpt, T4bounces) in T4res:
                 if T4hit_PMT:
                     T4_input_times.append(T4travel_time)
@@ -444,16 +442,15 @@ class Simulation:
                     self.T4_endpoint_dist.append(T4endpt)
                     self.T4_prop_times.append(T4tot_dist/self.c)
                     self.T4_interactions.append(T4bounces)
-                    pmt_hits +=1
         logendtime = perf_counter()
         # PRINT RESULTS
         print("TIME ANALYSIS:")
         pgtime = self.days_hours_minutes(timedelta(seconds=logendparticle-logstarttime))
         phtime = self.days_hours_minutes(timedelta(seconds=logendtime-logstartphoton))
         ttime = self.days_hours_minutes(timedelta(seconds=logendtime-logstarttime))
-        print(f"Generation of Particles     {pgtime[0]}days {pgtime[1]}hrs {pgtime[2]}mins {pgtime[3]}s")
-        print(f"Simulation of Photon Travel {phtime[0]}days {phtime[1]}hrs {phtime[2]}mins {phtime[3]}s")
-        print(f"Total Time Elapsed:         {ttime[0]}days {ttime[1]}hrs {ttime[2]}mins {ttime[3]}s")
+        print(f"Generation of Particles     {pgtime[0]}days {pgtime[1]}hrs {pgtime[2]}mins {pgtime[3]:.5f}s")
+        print(f"Simulation of Photon Travel {phtime[0]}days {phtime[1]}hrs {phtime[2]}mins {phtime[3]:.5f}s")
+        print(f"Total Time Elapsed:         {ttime[0]}days {ttime[1]}hrs {ttime[2]}mins {ttime[3]:.5f}s")
         print("RESULTS SUMMARY:")
         print("HITS on T1",len(T1_input_times))
         print("RATIO T1   total photons", np.sum(T1photons), "total incident photons", len(T1_input_times), f"ratio={np.sum(T1photons)/len(T1_input_times):.2f}")
@@ -491,9 +488,18 @@ class Simulation:
         self.output_times_channelT4 = np.array(output_times_channelT4)
     
     # Output function
-    def to_csv(self):
-        
+    def to_csv(self, **kwargs):
+        output_extra = kwargs.get('extra_data_only', False)
+        output_both = kwargs.get('output_both', False)
         # OUTPUT FORMATTING
+        if output_extra or output_both:
+            print("Exporting Extra Data...")
+            dft1 = pd.DataFrame({'T1_prop_dist':self.T1_prop_dist,'T1_endpoint_dist':self.T1_endpoint_dist, 'T1_prop_times':self.T1_prop_times, 'T1_interactions':self.T1_interactions})
+            dft4 = pd.DataFrame({'T4_prop_dist':self.T4_prop_dist,'T4_endpoint_dist':self.T4_endpoint_dist, 'T4_prop_times':self.T4_prop_times, 'T4_interactions':self.T4_interactions})
+            dft1.to_csv('monte_carlo_extradata'+str(self.num_particles)+'chT1_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt') # default sep=','
+            dft4.to_csv('monte_carlo_extradata'+str(self.num_particles)+'chT4_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt') # default sep=','
+            if not output_both:
+                return
         print("Exporing to 2 channels...")
         # for each channel
         for time,signal,ch in zip([self.output_times_channelT1,self.output_times_channelT4],[self.signals_channelT1,self.signals_channelT4],[1,4]):
@@ -512,10 +518,55 @@ class Simulation:
             df = pd.concat([fill, df], ignore_index=True).sort_values(by=['time']).reset_index(drop=True)
             df['time'] = df['time']/1e12
             df = df[['time', 'current']] # need this for LTSpice PWL current input file to work
-            df.to_csv('monte_carlo_input'+str(self.num_particles)+'ch'+str(ch)+'_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt', float_format='%.13f', header=False, index=False, sep=' ')
-            print(df)
+            df.to_csv('monte_carlo_input'+str(self.num_particles)+'ch'+str(ch)+'_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt', float_format='%.13f', header=False, index=False, sep=' ') # PWL file formatting
         print("Done!")
+
+        
     
+    def load_extradata(self, filename=None, filenum=None):
+        import os
+        # Default
+        date = datetime.now().strftime('%m_%d_%Y')
+        num = self.num_particles
+        if filenum is not None:
+            num = int(filenum)
+        fileT1 = 'monte_carlo_extradata'+str(num)+'chT1_'+str(date)+'.txt'
+        fileT4 = 'monte_carlo_extradata'+str(num)+'chT4_'+str(date)+'.txt'
+        if filename is not None: # if special name use it
+            if filename[-16] == '1':
+                fileT1 = filename
+                fileT4 = filename[:-17]+'4'+filename[-15:]
+            else:
+                fileT1 = filename[:-17]+'1'+filename[-15:]
+                fileT4 = filename
+        # Check for path errors
+        print(fileT1)
+        print(fileT4)
+        valid = True
+        if os.path.exists(fileT1) is False:
+            print("Path to T1 result file below doesn't exist!")
+            print(fileT1)
+            valid = False
+        if os.path.exists(fileT4) is False:
+            print("Path to T4 result file below doesn't exist!")
+            print(fileT4)
+            valid = False
+        if not valid:
+            print("Please try again with correct path to result file")
+            return
+        # Load data
+        T1extra_data = pd.read_csv(fileT1)
+        T4extra_data = pd.read_csv(fileT4)
+        # If require to replace, replace
+        self.T1_prop_dist = T1extra_data['T1_prop_dist']
+        self.T4_prop_dist = T4extra_data['T4_prop_dist']
+        self.T1_endpoint_dist = T1extra_data['T1_endpoint_dist']
+        self.T4_endpoint_dist = T4extra_data['T4_endpoint_dist']
+        self.T1_prop_times = T1extra_data['T1_prop_times']
+        self.T4_prop_times = T4extra_data['T4_prop_times']
+        self.T1_interactions = T1extra_data['T1_interactions']
+        self.T4_interactions = T4extra_data['T4_interactions']
+        print("Saved to class fields")
     """
       Alternate ToF Method Assuming Seperation Width and Known # of Particles
       Uses rising edge time to compare for Time-of-Flight calculations like CMOS chip
@@ -658,12 +709,12 @@ class Simulation:
     Loads ToF onto FinalToF ndarray and will append if there already exists an array
     Unless replace=True 
     """
-    def load_ToF(self, filename, replace=True):
+    def load_ToF(self, count, filename, replace=True):
         import os
         # Default
         date = datetime.now().strftime('%m_%d_%Y')
         num_total = self.num_particles
-        counted = self.num_particles
+        counted = count
         file = 'result_'+str(counted)+'_of_'+str(num_total)+'_'+str(date)+'.txt'
         if filename is not None: # if special name use it
             file = filename
@@ -925,6 +976,7 @@ class Simulation:
     def plot_xydistance_distr(self):
         if hasattr(self, 'T1_prop_dist') & hasattr(self, 'T4_prop_dist') & hasattr(self, 'T1_interactions') & hasattr(self, 'T4_interactions'):
             import matplotlib.pyplot as plt
+            # import seaborn as sns
             fig0, ax0 = plt.subplots(1,2)
             fig0.set_size_inches(12,6)
             bins = np.linspace(0,40,125)
@@ -944,15 +996,21 @@ class Simulation:
             ax0[1].grid()
             plt.show()
             fig1, ax1 = plt.subplots(1,2)
-            fig1.set_size_inches(12,6)
-            ax1[0].scatter(self.T1_prop_dist, self.T1_interactions, s=1)
+            fig1.set_size_inches(13,6)
+            ax1[0].scatter(self.T1_prop_dist, self.T1_interactions, s=10, alpha=0.5, facecolors='none', edgecolors='C0')
+            # h0 = ax1[0].hist2d(self.T1_prop_dist, self.T1_interactions, bins=[6,6], range=[[0,max(self.T1_prop_dist)],[0,max(self.T1_interactions)]])
+            # fig1.colorbar(h0[3], ax=ax1[0])
+            # sns.kdeplot(self.T1_prop_dist, self.T1_interactions, n_levels=250, cbar=True, shade_lowest=False, cmap='viridis', ax=ax1[0])
             ax1[0].axvline(self.T1_radius, color='C2', label='T1 radius')
             ax1[0].set_xlabel('Distance [cm]')
             ax1[0].set_ylabel('# Interactions with Boundary')
             ax1[0].set_title('T1 Propagation XY Distance vs. Interactions / Reflections')
             ax1[0].legend()
             ax1[0].grid()
-            ax1[1].scatter(self.T4_prop_dist, self.T4_interactions, s=1)
+            ax1[1].scatter(self.T4_prop_dist, self.T4_interactions, s=10, alpha=0.3, facecolors='none', edgecolors='C0')
+            # h1 = ax1[1].hist2d(self.T4_prop_dist, self.T4_interactions, bins=[6,6], range=[[0,max(self.T4_prop_dist)],[0,max(self.T4_interactions)]])
+            # fig1.colorbar(h1[3], ax=ax1[1])
+            # sns.kdeplot(self.T4_prop_dist, self.T4_interactions, n_levels=250, cbar=True, shade_lowest=False, cmap='viridis', ax=ax1[1])
             ax1[1].axvline(self.T4_radius, color='C2',label='T4 radius')
             ax1[1].set_xlabel('Distance [cm]')
             ax1[1].set_ylabel('# Interactions with Boundary')
@@ -968,26 +1026,22 @@ class Simulation:
             import matplotlib.pyplot as plt
             fig0, ax0 = plt.subplots(1,2)
             fig0.set_size_inches(12,6)
-            (m0, b0), cov0 = np.polyfit(self.T1_prop_times, self.T1_endpoint_dist, deg=1, cov=True)
-            param_err0 = np.sqrt(np.diag(cov0))
-            (m1, b1), cov1 = np.polyfit(self.T4_prop_times, self.T4_endpoint_dist, deg=1, cov=True)
-            param_err1 = np.sqrt(np.diag(cov1))
+            T1proptime = np.array(self.T1_prop_times)
+            T4proptime = np.array(self.T4_prop_times)
+            limT1 = T1proptime < np.mean(T1proptime)+np.std(T1proptime)*3
+            limT4 = T4proptime < np.mean(T4proptime)+np.std(T4proptime)*3
             ax0[0].scatter(self.T1_prop_times, self.T1_endpoint_dist, s=1.5)
-            ax0[0].plot(self.T1_prop_times,np.array(self.T1_prop_times)*m0+b0,label=f'Fit t=d*({m0:.2f}$\pm${param_err0[0]:.2f})+{b0:.2f}$\pm${param_err0[1]:.2f}')
-            ax0[0].plot(self.T1_prop_times, self.c*self.T1_prop_times, color='C3', label='$c$ slope line')
-            ax0[0].axhline(self.T1_radius, color='C2', label='T1 radius')
+            ax0[0].plot(T1proptime[limT1], T1proptime[limT1]*self.c, color='C3', label=f'c={self.c:.5f}cm/ps slope line')
             ax0[0].set_xlabel('time [ps]')
             ax0[0].set_ylabel('Distance [cm]')
-            ax0[0].set_title('T1 Distance From Track to PMT vs. Propagation Time')
+            ax0[0].set_title(f'T1 Distance From Track to PMT vs. Propagation Time, outliers={np.count_nonzero(~limT1)}')
             ax0[0].legend()
             ax0[0].grid()
             ax0[1].scatter(self.T4_prop_times, self.T4_endpoint_dist, s=1.5)
-            ax0[1].plot(self.T4_prop_times,np.array(self.T4_prop_times)*m1+b1,label=f'Fit t=d*({m1:.2f}$\pm${param_err1[0]:.2f})+{b1:.2f}$\pm${param_err1[1]:.2f}')
-            ax0[1].axhline(self.T4_radius, color='C2', label='T4 radius')
-            ax0[1].plot(self.T1_prop_times, self.c*self.T1_prop_times, color='C3', label='$c$ slope line')
+            ax0[1].plot(T4proptime[limT4], T4proptime[limT4]*self.c, color='C3', label=f'c={self.c:.5f}cm/ps slope line')
             ax0[1].set_xlabel('time [ps]')
             ax0[1].set_ylabel('Distance [cm]')
-            ax0[1].set_title('T4 Distance From Track to PMT vs. Propagation Time')
+            ax0[1].set_title(f'T4 Distance From Track to PMT vs. Propagation Time, outliers={np.count_nonzero(~limT4)}')
             ax0[1].legend()
             ax0[1].grid()
             plt.show()
@@ -1002,9 +1056,11 @@ if __name__ == '__main__':
     # sim.plot_scint(4,[0,0,0],1,True,100,2000)
     # sim.plot_particle_dist(100)
     sim.max_simulated_reflections = 40
-    sim.run(30)
-    sim.plot_xydistance_distr()
-    sim.plot_distPMT_proptime()
+    sim.run(1)
+    sim.to_csv(output_both=True)
+    # sim.load_extradata(filenum=30)
+    # sim.plot_xydistance_distr()
+    # sim.plot_distPMT_proptime()
     # sim.plot_gen_PE(10)
     # sim.to_csv()
     # sim.ltspice(filedate='05_07_2023',filenum=20000)
