@@ -306,6 +306,7 @@ class Simulation:
         corner_radius = scint_width*4
         signs = light_guide_planes/np.abs(light_guide_planes)
         corner_center = [signs[0]*(scint_radius-corner_radius),signs[1]*(scint_radius-corner_radius),scint_plane[0]]
+        endpoint_dist = self.mag(o-pmt_center)
         theta = random.uniform(0,2*np.pi)             # first theta direction of photon
         phi = random.uniform(0,np.pi)                 # first phi   direction of photon
         PMT_hit_condition = False
@@ -329,7 +330,7 @@ class Simulation:
         if keepdata:
             return PMT_hit_condition, t, track_history
         else:
-            return PMT_hit_condition, t, total_dist
+            return PMT_hit_condition, t, total_dist, endpoint_dist, i
 
     # PMT SIMULATION
     def photoElectrons(self, photons): # Main monte carlo
@@ -373,6 +374,8 @@ class Simulation:
         # minutes - 60*#hours
         # seconds - 60*#minutes
         return td.days, td.seconds//3600-(24*td.days), (td.seconds//60)%60-(60*(td.seconds//3600)), td.total_seconds()-(60*((td.seconds//60)%60))
+
+        """Run simulation with default 1 particle or arg[0] as number of particles and a time seperation of 'delta_t'=1e-5"""
     def run(self, *arg, **kwargs):
         freeze_support()
         if arg:
@@ -396,10 +399,18 @@ class Simulation:
         print("Photons generated", N)
 
         # SIMULATE EACH PHOTON PATH IN BOTH SCINTILLATORS
+        # Gather TOF data
         T1_input_times = []
         T4_input_times = []
+        # Gather Extra Data for analysis
         self.T1_prop_dist = []
         self.T4_prop_dist = []
+        self.T1_endpoint_dist = []
+        self.T4_endpoint_dist = []
+        self.T1_prop_times = []
+        self.T4_prop_times = []
+        self.T1_interactions = []
+        self.T4_interactions = []
         pmt_hits = 0
         T1points = (points[1:])[points[1:,2] >= self.T1z]
         T1times = (times[1:])[points[1:,2] >= self.T1z]
@@ -408,6 +419,7 @@ class Simulation:
         T4times = (times[1:])[points[1:,2] < self.T1z]
         T4photons = (photons[1:])[points[1:,2] < self.T1z]
         print(f"Photons in T1: {np.sum(T1photons)} and Photons in T4: {np.sum(T4photons)}")
+        del times; del points; del photons; # remove copies
         logstartphoton = perf_counter()
         with Pool(processes=cpu_count()) as pool:
             print("T1 Photon Propagation working...", end='\r')
@@ -417,15 +429,21 @@ class Simulation:
             T4res = pool.starmap(self.scint_taskT4, np.repeat(np.c_[T4points,T4times],T4photons.astype(int), axis=0))
             print("T4 Photon Propagation done.     ")
             print("Unzipping reuslts into arrays...")
-            for (T1hit_PMT, T1travel_time, T1tot_dist) in T1res:
+            for (T1hit_PMT, T1travel_time, T1tot_dist, T1endpt, T1bounces) in T1res:
                 if T1hit_PMT:
                     T1_input_times.append(T1travel_time)
                     self.T1_prop_dist.append(T1tot_dist)
+                    self.T1_endpoint_dist.append(T1endpt)
+                    self.T1_prop_times.append(T1tot_dist/self.c)
+                    self.T1_interactions.append(T1bounces)
                     pmt_hits +=1
-            for (T4hit_PMT, T4travel_time, T4tot_dist) in T4res:
+            for (T4hit_PMT, T4travel_time, T4tot_dist, T4endpt, T4bounces) in T4res:
                 if T4hit_PMT:
                     T4_input_times.append(T4travel_time)
                     self.T4_prop_dist.append(T4tot_dist)
+                    self.T4_endpoint_dist.append(T4endpt)
+                    self.T4_prop_times.append(T4tot_dist/self.c)
+                    self.T4_interactions.append(T4bounces)
                     pmt_hits +=1
         logendtime = perf_counter()
         # PRINT RESULTS
@@ -451,13 +469,13 @@ class Simulation:
         output_times_channelT4 = []
         signals = []
         output_times = []
-        for i,t in enumerate(T1_input_times):
+        for t in T1_input_times:
             pmtSignal_i = self.photontoElectrons(1)
             output_times.append(self.pmt_electron_travel_time+t)
             output_times_channelT1.append(self.pmt_electron_travel_time+t)
             signals.append(pmtSignal_i)
             signals_channelT1.append(pmtSignal_i)
-        for i,t in enumerate(T4_input_times):
+        for t in T4_input_times:
             pmtSignal_i = self.photontoElectrons(1)
             output_times.append(self.pmt_electron_travel_time+t)
             output_times_channelT4.append(self.pmt_electron_travel_time+t)
@@ -869,13 +887,13 @@ class Simulation:
         with Pool(processes=cpu_count()) as pool:
             T1res = pool.starmap(self.scint_taskT1, tqdm(np.repeat(np.c_[T1points,T1times],T1photons.astype(int), axis=0),total=np.sum(T1photons)))
             T4res = pool.starmap(self.scint_taskT4, tqdm(np.repeat(np.c_[T4points,T4times],T4photons.astype(int), axis=0),total=np.sum(T4photons)))
-            for (T1hit_PMT, T1travel_time, T1tot_dist), T1part_id in zip(T1res, T1part_ids):
+            for (T1hit_PMT, T1travel_time, T1tot_dist, _), T1part_id in zip(T1res, T1part_ids):
                 if T1hit_PMT:
                     T1_input_times.append(T1travel_time)
                     T1_prop_dist.append(T1tot_dist)
                     T1_output_id.append(T1part_id)
                     pmt_hitsT1 +=1
-            for (T4hit_PMT, T4travel_time, T4tot_dist), T4part_id in zip(T4res, T4part_ids):
+            for (T4hit_PMT, T4travel_time, T4tot_dist, _), T4part_id in zip(T4res, T4part_ids):
                 if T4hit_PMT:
                     T4_input_times.append(T4travel_time)
                     T4_prop_dist.append(T4tot_dist)
@@ -905,37 +923,88 @@ class Simulation:
         plt.show()
             
     def plot_xydistance_distr(self):
-        if hasattr(self, 'T1_prop_dist') & hasattr(self, 'T4_prop_dist'):
+        if hasattr(self, 'T1_prop_dist') & hasattr(self, 'T4_prop_dist') & hasattr(self, 'T1_interactions') & hasattr(self, 'T4_interactions'):
             import matplotlib.pyplot as plt
             fig0, ax0 = plt.subplots(1,2)
             fig0.set_size_inches(12,6)
             bins = np.linspace(0,40,125)
             ax0[0].hist(self.T1_prop_dist, bins=bins, histtype='step', edgecolor='k')
-            ax0[0].axvline(self.T1_radius, label='T1 radius')
+            ax0[0].axvline(self.T1_radius, color='C2', label='T1 radius')
             ax0[0].set_xlabel('Distance [cm]')
             ax0[0].set_ylabel('Entries')
             ax0[0].set_title('T1 Propagation XY Distance Distribution')
             ax0[0].legend()
+            ax0[0].grid()
             ax0[1].hist(self.T4_prop_dist, bins=bins, histtype='step', edgecolor='k')
-            ax0[1].axvline(self.T4_radius, label='T4 radius')
+            ax0[1].axvline(self.T4_radius, color='C2', label='T4 radius')
             ax0[1].set_xlabel('Distance [cm]')
             ax0[1].set_ylabel('Entries')
             ax0[1].set_title('T4 Propagation XY Distance Distribution')
             ax0[1].legend()
+            ax0[1].grid()
+            plt.show()
+            fig1, ax1 = plt.subplots(1,2)
+            fig1.set_size_inches(12,6)
+            ax1[0].scatter(self.T1_prop_dist, self.T1_interactions, s=1)
+            ax1[0].axvline(self.T1_radius, color='C2', label='T1 radius')
+            ax1[0].set_xlabel('Distance [cm]')
+            ax1[0].set_ylabel('# Interactions with Boundary')
+            ax1[0].set_title('T1 Propagation XY Distance vs. Interactions / Reflections')
+            ax1[0].legend()
+            ax1[0].grid()
+            ax1[1].scatter(self.T4_prop_dist, self.T4_interactions, s=1)
+            ax1[1].axvline(self.T4_radius, color='C2',label='T4 radius')
+            ax1[1].set_xlabel('Distance [cm]')
+            ax1[1].set_ylabel('# Interactions with Boundary')
+            ax1[1].set_title('T4 Propagation XY Distance vs. Interactions / Reflections')
+            ax1[1].legend()
+            ax1[1].grid()
             plt.show()
         else:
             print("Need to run simulation first with sim.run()")
+
+    def plot_distPMT_proptime(self):
+        if hasattr(self, 'T1_endpoint_dist') & hasattr(self, 'T1_prop_times') & hasattr(self, 'T4_endpoint_dist') & hasattr(self, 'T4_prop_times'):
+            import matplotlib.pyplot as plt
+            fig0, ax0 = plt.subplots(1,2)
+            fig0.set_size_inches(12,6)
+            (m0, b0), cov0 = np.polyfit(self.T1_prop_times, self.T1_endpoint_dist, deg=1, cov=True)
+            param_err0 = np.sqrt(np.diag(cov0))
+            (m1, b1), cov1 = np.polyfit(self.T4_prop_times, self.T4_endpoint_dist, deg=1, cov=True)
+            param_err1 = np.sqrt(np.diag(cov1))
+            ax0[0].scatter(self.T1_prop_times, self.T1_endpoint_dist, s=1.5)
+            ax0[0].plot(self.T1_prop_times,np.array(self.T1_prop_times)*m0+b0,label=f'Fit t=d*({m0:.2f}$\pm${param_err0[0]:.2f})+{b0:.2f}$\pm${param_err0[1]:.2f}')
+            ax0[0].plot(self.T1_prop_times, self.c*self.T1_prop_times, color='C3', label='$c$ slope line')
+            ax0[0].axhline(self.T1_radius, color='C2', label='T1 radius')
+            ax0[0].set_xlabel('time [ps]')
+            ax0[0].set_ylabel('Distance [cm]')
+            ax0[0].set_title('T1 Distance From Track to PMT vs. Propagation Time')
+            ax0[0].legend()
+            ax0[0].grid()
+            ax0[1].scatter(self.T4_prop_times, self.T4_endpoint_dist, s=1.5)
+            ax0[1].plot(self.T4_prop_times,np.array(self.T4_prop_times)*m1+b1,label=f'Fit t=d*({m1:.2f}$\pm${param_err1[0]:.2f})+{b1:.2f}$\pm${param_err1[1]:.2f}')
+            ax0[1].axhline(self.T4_radius, color='C2', label='T4 radius')
+            ax0[1].plot(self.T1_prop_times, self.c*self.T1_prop_times, color='C3', label='$c$ slope line')
+            ax0[1].set_xlabel('time [ps]')
+            ax0[1].set_ylabel('Distance [cm]')
+            ax0[1].set_title('T4 Distance From Track to PMT vs. Propagation Time')
+            ax0[1].legend()
+            ax0[1].grid()
+            plt.show()
+        else:
+            print("Need to run simulation first with sim.run()")
+
+
 
 if __name__ == '__main__':
     sim = Simulation()
     # sim.plot_scint(1,[0,0,0],1,True,100,2000)
     # sim.plot_scint(4,[0,0,0],1,True,100,2000)
     # sim.plot_particle_dist(100)
-    # sim.artificial_gain = 2 # was 3
-    # sim.num_particles = 5
     sim.max_simulated_reflections = 40
-    sim.run(10)
+    sim.run(30)
     sim.plot_xydistance_distr()
+    sim.plot_distPMT_proptime()
     # sim.plot_gen_PE(10)
     # sim.to_csv()
     # sim.ltspice(filedate='05_07_2023',filenum=20000)
