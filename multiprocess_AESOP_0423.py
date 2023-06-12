@@ -34,7 +34,7 @@ class Simulation:
         self.yPMT4=9.5*np.sin(np.radians(110))*2.54
         self.xPMT1=8.*np.cos(np.radians(-45))*2.54 # x2PMT1=8.*np.cos(np.radians(-53.72))*2.54 For test
         self.yPMT1=8.*np.sin(np.radians(-45))*2.54 # y2PMT1=8.*np.sin(np.radians(-53.72))*2.54 For test
-        self.PMT1_radius = 4.6/2 #cm 
+        self.PMT1_radius = 4.6/2 #cm need to change this to 46 milimeters or 0.046 cm
         self.PMT4_radius = 4.6/2 #cm 
         
         self.n_dynodes = 8
@@ -535,9 +535,9 @@ class Simulation:
         if filename is not None: # if special name use it
             if filename[-16] == '1':
                 fileT1 = filename
-                fileT4 = filename[:-17]+'4'+filename[-15:]
+                fileT4 = filename[:-16]+'4'+filename[-15:]
             else:
-                fileT1 = filename[:-17]+'1'+filename[-15:]
+                fileT1 = filename[:-16]+'1'+filename[-15:]
                 fileT4 = filename
         # Check for path errors
         print(fileT1)
@@ -987,6 +987,7 @@ class Simulation:
             ax0[0].set_title('T1 Propagation XY Distance Distribution')
             ax0[0].legend()
             ax0[0].grid()
+            bins = np.linspace(0,60,125)
             ax0[1].hist(self.T4_prop_dist, bins=bins, histtype='step', edgecolor='k')
             ax0[1].axvline(self.T4_radius, color='C2', label='T4 radius')
             ax0[1].set_xlabel('Distance [cm]')
@@ -1031,14 +1032,14 @@ class Simulation:
             limT1 = T1proptime < np.mean(T1proptime)+np.std(T1proptime)*3
             limT4 = T4proptime < np.mean(T4proptime)+np.std(T4proptime)*3
             ax0[0].scatter(self.T1_prop_times, self.T1_endpoint_dist, s=1.5)
-            ax0[0].plot(T1proptime[limT1], T1proptime[limT1]*self.c, color='C3', label=f'c={self.c:.5f}cm/ps slope line')
+            ax0[0].plot(T1proptime[limT1], T1proptime[limT1]*self.c+self.PMT1_radius, color='C3', label=f'c={self.c:.5f}cm/ps slope line')
             ax0[0].set_xlabel('time [ps]')
             ax0[0].set_ylabel('Distance [cm]')
             ax0[0].set_title(f'T1 Distance From Track to PMT vs. Propagation Time, outliers={np.count_nonzero(~limT1)}')
             ax0[0].legend()
             ax0[0].grid()
             ax0[1].scatter(self.T4_prop_times, self.T4_endpoint_dist, s=1.5)
-            ax0[1].plot(T4proptime[limT4], T4proptime[limT4]*self.c, color='C3', label=f'c={self.c:.5f}cm/ps slope line')
+            ax0[1].plot(T4proptime[limT4], T4proptime[limT4]*self.c+self.PMT4_radius, color='C3', label=f'c={self.c:.5f}cm/ps slope line')
             ax0[1].set_xlabel('time [ps]')
             ax0[1].set_ylabel('Distance [cm]')
             ax0[1].set_title(f'T4 Distance From Track to PMT vs. Propagation Time, outliers={np.count_nonzero(~limT4)}')
@@ -1055,12 +1056,12 @@ if __name__ == '__main__':
     # sim.plot_scint(1,[0,0,0],1,True,100,2000)
     # sim.plot_scint(4,[0,0,0],1,True,100,2000)
     # sim.plot_particle_dist(100)
-    sim.max_simulated_reflections = 40
-    sim.run(1)
-    sim.to_csv(output_both=True)
-    # sim.load_extradata(filenum=30)
-    # sim.plot_xydistance_distr()
-    # sim.plot_distPMT_proptime()
+    # sim.max_simulated_reflections = 40
+    # sim.run(1)
+    # sim.to_csv(output_both=True)
+    sim.load_extradata(filename='monte_carlo_extradata4000chT1_06_12_2023.txt')
+    sim.plot_xydistance_distr()
+    sim.plot_distPMT_proptime()
     # sim.plot_gen_PE(10)
     # sim.to_csv()
     # sim.ltspice(filedate='05_07_2023',filenum=20000)
