@@ -8,7 +8,7 @@ XU1 outp N004 N006 N005 N001 LTC6247
 V4 N002 0 3.3
 R14 N006 0 10.2k
 XU5 N003 input N001 N004 N002 0 compOut LT1715
-V5 N003 0 -.0013
+V5 N003 0 -0.013
 R16 input 0 100k
 I1 input 0 PWL file=/Users/liambranch/Desktop/Monte-Python/monte_carlo_input5ch1_05_10_2023.txt
 C1 input 0 120p
