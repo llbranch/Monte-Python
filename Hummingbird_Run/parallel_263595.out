@@ -1,0 +1,32 @@
+######################################################
+Generated Apparatus Simulation with following defaults
+######################################################
+PARTICLE: Mean Free Path = 8e-05 cm
+PARTICLE: Time Seperation between sequential Particles if simulation more than 1 = 100000.0
+SCINT:    Probability of Scintillaton = 0.8
+PMT:      Quantum Efficiency is set to 1 by default to keep more pulses
+PMT:      Energy per Photoelectron is set to 20 by best estimation
+PMT:      Artificial Gain on Output Current = 1
+OUTPUT:   Binning Width for PWL output file = 100 ps
+
+Run with .run() function given optional arguments below
+integer n particles, 'delta_t' = 100000.0 ps particle time seperation
+Generating 4000 particles now...
+Photons generated 608622064.0
+Photons in T1: 202883419.0 and Photons in T4: 405738645.0
+T1 Photon Propagation working...T1 Photon Propagation done.     
+T4 Photon Propagation working...T4 Photon Propagation done.     
+Unzipping reuslts into arrays...
+TIME ANALYSIS:
+Generation of Particles     0days 0hrs 38mins 0.31577s
+Simulation of Photon Travel 0days 13hrs -769mins 46812.93176s
+Total Time Elapsed:         0days 13hrs -731mins 46816.67070s
+RESULTS SUMMARY:
+HITS on T1 180504
+RATIO T1   total photons 202883419.0 total incident photons 180504 ratio=1123.98
+HITS on T4 745140
+RATIO T4   total photons  405738645.0 total incident photons 745140 ratio=544.51
+DISTANCE: 
+Exporting Extra Data...
+Exporing to 2 channels...
+Done!
