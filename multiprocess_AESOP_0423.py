@@ -578,7 +578,7 @@ class Simulation:
         dtime = rawtime[limit]
         dtvoltage = rawVoltage[limit]
         tdiff = np.diff(dtime)
-        condition = tdiff > 10e-9 # check if next point is 10ns away
+        condition = tdiff > self.seperation_time/1e12/10 # check if next point is 10ns away
         count = 0
         start_index = 0
         for i in range(len(tdiff)): # for number of particles we expect
@@ -688,8 +688,8 @@ class Simulation:
         filename_ch4 = os.path.abspath('output'+str(num_part)+'ch4_'+str(date)+'.txt')
         ch1 = pd.read_csv(filename_ch1, names=['t', 'V'], sep=',')
         ch4 = pd.read_csv(filename_ch4, names=['t', 'V'], sep=',')
-        ch1ToF = self.time_at_thresh(ch1['t'],ch1['V'], self.num_particles, self.CMOS_thresh, 1)
-        ch4ToF = self.time_at_thresh(ch4['t'],ch4['V'], self.num_particles, self.CMOS_thresh, 4)
+        ch1ToF = self.time_at_thresh(ch1['t'],ch1['V'], num_part, self.CMOS_thresh, 1)
+        ch4ToF = self.time_at_thresh(ch4['t'],ch4['V'], num_part, self.CMOS_thresh, 4)
         self.ToF_finalize(ch1ToF,ch4ToF) # Calculated correct time of flight
         print(pd.DataFrame(self.FinalToF).describe())
 
@@ -734,13 +734,27 @@ class Simulation:
     
     def plotToF(self):
         import matplotlib.pyplot as plt
+        from scipy.optimize import curve_fit
+        # Setup least squares loss for guassian function with 4 parameters (amplitude, mean, stddev, bias)
+        fitfunc  = lambda x, p0, p1, p2, p3: p0*np.exp(-0.5*((x-p1)/p2)**2)+p3
+        errfunc  = lambda p, x, y: (y - fitfunc(p, x))
+        init  = [200e0, 2e-9, 1e-9, 0e0]
         plt.title(f'TOF, Total Points {len(self.FinalToF)}')
-        plt.hist(self.FinalToF, bins=np.linspace(0,10e-9,125), histtype='step', edgecolor='k', linewidth=2)
-        plt.axvline(np.mean(self.FinalToF), label=f'$\mu$={np.mean(self.FinalToF):.2e}', color='C1')
+        # Plot histogram
+        h, xedges, _ = plt.hist(self.FinalToF, bins=np.linspace(0,5e-9,125), histtype='step', edgecolor='k', linewidth=2)
+        xdata = (xedges[:-1] + xedges[1:]) / 2
+        # Run least squares fit
+        p, cov = curve_fit(fitfunc, xdata, h, p0=init)
+        dp = np.sqrt(np.diag(cov))
+        # find FWHM
+        fwhm = 2*np.sqrt(2*np.log(2))*p[2]
+        # Plot fitted guassian
+        plotlabel = '$\mu=$ '+f'{p[1]/1e-9:.2f}'+'$\pm$'+f'{dp[1]/1e-9:.2f}ns\n'+'$\sigma=$ '+f'{p[2]/1e-9:.2f}'+'$\pm$'+f'{dp[2]/1e-9:.2f}ns\n'+f'FWHM = {fwhm/1e-9:.2f}ns'
+        plt.plot(xedges,fitfunc(xedges, p[0], p[1], p[2], p[3]), label=plotlabel, ls='--')
         plt.grid()
         plt.legend()
         plt.show()
-        return
+
     #############################
     # DEBUG AND PLOTTING
     #############################
@@ -987,7 +1001,7 @@ class Simulation:
             ax0[0].set_title('T1 Propagation XY Distance Distribution')
             ax0[0].legend()
             ax0[0].grid()
-            bins = np.linspace(0,60,125)
+            bins = np.linspace(0,80,125)
             ax0[1].hist(self.T4_prop_dist, bins=bins, histtype='step', edgecolor='k')
             ax0[1].axvline(self.T4_radius, color='C2', label='T4 radius')
             ax0[1].set_xlabel('Distance [cm]')
@@ -998,9 +1012,9 @@ class Simulation:
             plt.show()
             fig1, ax1 = plt.subplots(1,2)
             fig1.set_size_inches(13,6)
-            ax1[0].scatter(self.T1_prop_dist, self.T1_interactions, s=10, alpha=0.5, facecolors='none', edgecolors='C0')
-            # h0 = ax1[0].hist2d(self.T1_prop_dist, self.T1_interactions, bins=[6,6], range=[[0,max(self.T1_prop_dist)],[0,max(self.T1_interactions)]])
-            # fig1.colorbar(h0[3], ax=ax1[0])
+            # ax1[0].scatter(self.T1_prop_dist, self.T1_interactions, s=10, alpha=0.5, facecolors='none', edgecolors='C0')
+            h0 = ax1[0].hist2d(self.T1_prop_dist, self.T1_interactions, bins=[250,40], range=[[0,np.mean(self.T1_prop_dist)+np.std(self.T1_prop_dist)*5],[0,max(self.T1_interactions)]], cmin = 1)
+            fig1.colorbar(h0[3], ax=ax1[0])
             # sns.kdeplot(self.T1_prop_dist, self.T1_interactions, n_levels=250, cbar=True, shade_lowest=False, cmap='viridis', ax=ax1[0])
             ax1[0].axvline(self.T1_radius, color='C2', label='T1 radius')
             ax1[0].set_xlabel('Distance [cm]')
@@ -1008,9 +1022,9 @@ class Simulation:
             ax1[0].set_title('T1 Propagation XY Distance vs. Interactions / Reflections')
             ax1[0].legend()
             ax1[0].grid()
-            ax1[1].scatter(self.T4_prop_dist, self.T4_interactions, s=10, alpha=0.3, facecolors='none', edgecolors='C0')
-            # h1 = ax1[1].hist2d(self.T4_prop_dist, self.T4_interactions, bins=[6,6], range=[[0,max(self.T4_prop_dist)],[0,max(self.T4_interactions)]])
-            # fig1.colorbar(h1[3], ax=ax1[1])
+            # ax1[1].scatter(self.T4_prop_dist, self.T4_interactions, s=10, alpha=0.3, facecolors='none', edgecolors='C0')
+            h1 = ax1[1].hist2d(self.T4_prop_dist, self.T4_interactions, bins=[250,40], range=[[0,np.mean(self.T4_prop_dist)+np.std(self.T4_prop_dist)*5],[0,max(self.T4_interactions)]], cmin = 1)
+            fig1.colorbar(h1[3], ax=ax1[1])
             # sns.kdeplot(self.T4_prop_dist, self.T4_interactions, n_levels=250, cbar=True, shade_lowest=False, cmap='viridis', ax=ax1[1])
             ax1[1].axvline(self.T4_radius, color='C2',label='T4 radius')
             ax1[1].set_xlabel('Distance [cm]')
@@ -1031,19 +1045,23 @@ class Simulation:
             T4proptime = np.array(self.T4_prop_times)
             limT1 = T1proptime < np.mean(T1proptime)+np.std(T1proptime)*3
             limT4 = T4proptime < np.mean(T4proptime)+np.std(T4proptime)*3
-            ax0[0].scatter(self.T1_prop_times, self.T1_endpoint_dist, s=1.5)
+            # ax0[0].scatter(self.T1_prop_times, self.T1_endpoint_dist, s=1.5)
+            h0 = ax0[0].hist2d(self.T1_prop_times, self.T1_endpoint_dist, bins=[500,250], range=[[0,np.mean(T1proptime)+np.std(T1proptime)*5],[5,max(self.T1_endpoint_dist)]], cmin = 1)
+            fig0.colorbar(h0[3], ax=ax0[0])
             ax0[0].plot(T1proptime[limT1], T1proptime[limT1]*self.c+self.PMT1_radius, color='C3', label=f'c={self.c:.5f}cm/ps slope line')
             ax0[0].set_xlabel('time [ps]')
             ax0[0].set_ylabel('Distance [cm]')
-            ax0[0].set_title(f'T1 Distance From Track to PMT vs. Propagation Time, outliers={np.count_nonzero(~limT1)}')
+            ax0[0].set_title(f'T1 Distance From Track to PMT vs. Propagation Time')#, outliers={np.count_nonzero(~limT1)}')
             ax0[0].legend()
             ax0[0].grid()
-            ax0[1].scatter(self.T4_prop_times, self.T4_endpoint_dist, s=1.5)
+            # ax0[1].scatter(self.T4_prop_times, self.T4_endpoint_dist, s=1.5)
+            h1 = ax0[1].hist2d(self.T4_prop_times, self.T4_endpoint_dist, bins=[1000,500], range=[[0,np.mean(T4proptime)+np.std(T4proptime)*6],[2.5,max(self.T4_endpoint_dist)]], cmin = 1)
+            fig0.colorbar(h1[3], ax=ax0[1])
             ax0[1].plot(T4proptime[limT4], T4proptime[limT4]*self.c+self.PMT4_radius, color='C3', label=f'c={self.c:.5f}cm/ps slope line')
             ax0[1].set_xlabel('time [ps]')
             ax0[1].set_ylabel('Distance [cm]')
-            ax0[1].set_title(f'T4 Distance From Track to PMT vs. Propagation Time, outliers={np.count_nonzero(~limT4)}')
-            ax0[1].legend()
+            ax0[1].set_title(f'T4 Distance From Track to PMT vs. Propagation Time')#, outliers={np.count_nonzero(~limT4)}')
+            ax0[1].legend(loc='upper right')
             ax0[1].grid()
             plt.show()
         else:
@@ -1064,9 +1082,9 @@ if __name__ == '__main__':
     sim.plot_distPMT_proptime()
     # sim.plot_gen_PE(10)
     # sim.to_csv()
-    # sim.ltspice(filedate='05_07_2023',filenum=20000)
-    # sim.calc_ToF(filedate='05_07_2023',filenum=20000)
+    # sim.ltspice(filedate='06_12_2023',filenum=4000)
+    # sim.calc_ToF(filedate='06_12_2023',filenum=4000)
     # sim.save_ToF()
-    # sim.load_ToF(filename='result_16728_of_20000_06_05_2023.txt')
+    # sim.load_ToF(3991, filename='result_3991_of_4000_06_12_2023.txt')
     # sim.plotToF()
 

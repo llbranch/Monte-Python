@@ -11,7 +11,7 @@ XU5 N003 input N001 N004 N002 0 compOut LT1715
 V5 N003 0 -0.013
 R16 input 0 100k
 I1 input 0 PWL file=/Users/liambranch/Desktop/Monte-Python/monte_carlo_input5ch1_05_10_2023.txt
-C1 input 0 120p
+C1 input 0 140p
 .tran 0 4.5u 0 0.001u
 .save V(compOut)
 .lib LTC1.lib

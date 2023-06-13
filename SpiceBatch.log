@@ -1,0 +1,19 @@
+ERROR:PyLTSpice.LTSpiceSimulator:================== ALERT! ====================
+ERROR:PyLTSpice.LTSpiceSimulator:Unable to find a LTSpice executable.
+ERROR:PyLTSpice.LTSpiceSimulator:A specific location of the LTSPICE can be set
+ERROR:PyLTSpice.LTSpiceSimulator:using the create_from(<location>) class method
+ERROR:PyLTSpice.LTSpiceSimulator:==============================================
+INFO:PyLTSpice.SimRunner:SimRunner started
+INFO:PyLTSpice.RunTask:RunTask #1:: Starting simulation 1
+INFO:PyLTSpice.SimRunner:SimRunner started
+INFO:PyLTSpice.RunTask:RunTask #1:: Starting simulation 1
+WARNING:sim1:Mon Jun 12 16:49:38 2023: Simulation Failed. Time elapsed 00:00:00:
+
+WARNING:sim1:Mon Jun 12 16:50:49 2023: Simulation Failed. Time elapsed 00:00:00:
+
+INFO:sim1:Simulation Successful. Time elapsed: 00:00:00
+INFO:sim2:Simulation Successful. Time elapsed: 00:00:00
+INFO:sim1:Simulation Successful. Time elapsed: 00:00:00
+INFO:sim2:Simulation Successful. Time elapsed: 00:00:00
+INFO:sim1:Simulation Successful. Time elapsed: 00:00:00
+INFO:sim2:Simulation Successful. Time elapsed: 00:00:00
