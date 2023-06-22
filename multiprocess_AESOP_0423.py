@@ -483,7 +483,7 @@ class Simulation:
         self.signals = np.array(signals) * self.q / 1e-12 * self.artificial_gain # divided by 1ps 
         self.output_times = np.array(output_times)
         self.signals_channelT1 = np.array(signals_channelT1) * self.q / 1e-12 * self.artificial_gain
-        self.signals_channelT4 = np.array(signals_channelT4) * self.q / 1e-12 * self.artificial_gain
+        self.signals_channelT4 = np.array(signals_channelT4) * self.q / 1e-12 * self.artificial_gain * 0.6 # factor to limit pulses to 50miliamps and stop contant comparator firing. however, current should be smaller from Quantum Efficiency and current should be larger from 3kV potential difference across PMT dynodes instead of current 1kV potential difference
         self.output_times_channelT1 = np.array(output_times_channelT1)
         self.output_times_channelT4 = np.array(output_times_channelT4)
     
@@ -521,8 +521,26 @@ class Simulation:
             df.to_csv('monte_carlo_input'+str(self.num_particles)+'ch'+str(ch)+'_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt', float_format='%.13f', header=False, index=False, sep=' ') # PWL file formatting
         print("Done!")
 
-        
-    
+    def fix_artificial_gain(self, T1factor, T4factor, filedate=None, filenum=None):
+        import os
+        date = datetime.now().strftime('%m_%d_%Y') # Defaults
+        num_part = self.num_particles
+        if filedate is not None: # Take input given correct format
+            date = filedate
+        if filenum is not None: # Take input given correct integer number
+            num_part = int(filenum)
+        filename_ch1 = os.path.abspath('monte_carlo_input'+str(num_part)+'ch1_'+str(date)+'.txt')
+        filename_ch4 = os.path.abspath('monte_carlo_input'+str(num_part)+'ch4_'+str(date)+'.txt')
+        print("Loading files...")
+        dfch1 = pd.read_csv(filename_ch1, names=['time', 'current'], sep=' ')
+        dfch4 = pd.read_csv(filename_ch4, names=['time', 'current'], sep=' ')
+        print("Fixing files...")
+        dfch1['current'] = dfch1['current']*T1factor
+        dfch4['current'] = dfch4['current']*T4factor
+        dfch1.to_csv(filename_ch1, float_format='%.13f', header=False, index=False, sep=' ')
+        dfch4.to_csv(filename_ch4, float_format='%.13f', header=False, index=False, sep=' ')
+        print("Fixed! with T1 factor,", T1factor, " and T4 factor,", T4factor)
+
     def load_extradata(self, filename=None, filenum=None):
         import os
         # Default
@@ -631,7 +649,7 @@ class Simulation:
         import os
         from PyLTSpice import SimCommander, RawRead # Use version 3.1 by pip3 install PyLTSpice==3.1
         # Make the .net file (netlist) by opening file first then saving a seperate text file
-        LTC = SimCommander("PHAReduced_sim.net")
+        LTC = SimCommander("PHAReduced_sim.net", parallel_sims=cpu_count()-1)
         # When running this file, two LTSpice libaries must be in same folder location:
         # LTC1.lib and LTC7.lib
         ch1ToF = 0 # declare for scope
