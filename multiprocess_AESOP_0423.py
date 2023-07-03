@@ -44,7 +44,7 @@ class Simulation:
         self.QE = 1 #0.23
         self.t_initial = 0 #ps
         self.particle_init_angle_range = 40 #degrees
-        self.particle_gen_area = self.T1_radius/2
+        self.particle_gen_area = self.T1_radius
         self.particle_gen_z = self.T1z+self.T1_width + 2 #cm
         self.mean_free_path_scints = 8e-5 #cm or 80 micro meters
         self.photons_produced_per_MeV = 10 # true value is closer to 10000 per 1MeV
@@ -758,8 +758,10 @@ class Simulation:
         errfunc  = lambda p, x, y: (y - fitfunc(p, x))
         init  = [200e0, 2e-9, 1e-9, 0e0]
         plt.title(f'TOF, Total Points {len(self.FinalToF)}')
+        up_bound = np.quantile(self.FinalToF, 0.95)
+        low_bound = np.quantile(self.FinalToF, 0.05)
         # Plot histogram
-        h, xedges, _ = plt.hist(self.FinalToF, bins=np.linspace(0,5e-9,125), histtype='step', edgecolor='k', linewidth=2)
+        h, xedges, _ = plt.hist(self.FinalToF, bins=np.linspace(low_bound-1e-9,up_bound+1e-9,125), histtype='step', edgecolor='k', linewidth=2)
         xdata = (xedges[:-1] + xedges[1:]) / 2
         # Run least squares fit
         p, cov = curve_fit(fitfunc, xdata, h, p0=init)
@@ -1092,17 +1094,18 @@ if __name__ == '__main__':
     # sim.plot_scint(1,[0,0,0],1,True,100,2000)
     # sim.plot_scint(4,[0,0,0],1,True,100,2000)
     # sim.plot_particle_dist(100)
-    # sim.max_simulated_reflections = 40
+    # sim.max_simulated_reflections = 60
     # sim.run(1)
+    sim.num_particles = 4000
     # sim.to_csv(output_both=True)
-    sim.load_extradata(filename='monte_carlo_extradata4000chT1_06_12_2023.txt')
+    sim.load_extradata(filename='monte_carlo_extradata4000chT1_07_01_2023.txt')
     sim.plot_xydistance_distr()
     sim.plot_distPMT_proptime()
     # sim.plot_gen_PE(10)
     # sim.to_csv()
-    # sim.ltspice(filedate='06_12_2023',filenum=4000)
-    # sim.calc_ToF(filedate='06_12_2023',filenum=4000)
+    # sim.ltspice(filedate='07_01_2023',filenum=4000)
+    # sim.calc_ToF(filedate='07_01_2023',filenum=4000)
     # sim.save_ToF()
-    # sim.load_ToF(3991, filename='result_3991_of_4000_06_12_2023.txt')
-    # sim.plotToF()
+    sim.load_ToF(3858, filename='result_3858_of_4000_07_02_2023.txt')
+    sim.plotToF()
 
