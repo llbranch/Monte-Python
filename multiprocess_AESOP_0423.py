@@ -12,7 +12,7 @@ import random
 from time import perf_counter
 from datetime import timedelta, datetime
 from multiprocessing import Pool, cpu_count, freeze_support
-from memory_profiler import profile
+# from memory_profiler import profile
 
 
 class Simulation:
@@ -59,7 +59,7 @@ class Simulation:
         self.particle_init_angle_range = 40 #degrees
         self.particle_gen_area = self.T1_radius
         self.particle_gen_z = self.T1z+self.T1_width + 2 #cm
-        self.mean_free_path_scints = 8e-5 #cm or 80 micro meters
+        self.mean_free_path_scints = 24e-5 #cm or 80 micro meters
         self.photons_produced_per_MeV = 10 # true value is closer to 10000 per 1MeV
         self.pr_of_scintillation = 0.8
         self.max_simulated_reflections = 40
@@ -392,13 +392,13 @@ class Simulation:
         with Pool(processes=cpu_count()-1) as pool:
             res = pool.map(self.particle_task, range(self.num_particles))
             for (time_i, point_i, photon_i) in res:
-                times.append(time_i)
-                points.append(point_i)
-                photons.append(photon_i)
+                times.extend(time_i)
+                points.extend(point_i)
+                photons.extend(photon_i)
         logendparticle = perf_counter()
         N = np.sum(photons)
         print("Photons generated", N)
-        times = np.asarray(times[0]); points = np.asarray(points[0]); photons = np.asarray(photons[0])
+        times = np.asarray(times); points = np.asarray(points); photons = np.asarray(photons)
         # SIMULATE EACH PHOTON PATH IN BOTH SCINTILLATORS
         # Gather TOF data
         T1_input_times = []
@@ -529,6 +529,11 @@ class Simulation:
                     if x > max(t_binned): 
                         t_binned.append(x)
                         y_binned.append(0)
+                    elif (np.digitize(x, t_binned)-1 > 0) and (np.digitize(x, t_binned) < len(t_binned)):
+                        index = np.digitize(x, t_binned)
+                        if abs(t_binned[index]-t_binned[index-1]) > self.output_bin_width:
+                            t_binned.insert(index, x) # check if need -1 or just np.digitize()
+                            y_binned.insert(index, 0) # check 
                 # GET INDICIES
                 index_lower = [i for i,t in enumerate(t_binned) if t >= lower_bound][0] # left edge in time binned
                 index_upper = [i for i,t in enumerate(t_binned) if t <= upper_bound][-1] # right edge in time binned
@@ -540,7 +545,6 @@ class Simulation:
 
             df = pd.DataFrame({'time':t_binned,'current':y_binned}).sort_values(by=['time'])
             print("Formatting PWL dataframe...")
-            print(df)
             fill_data = []                                                                      # declare empty array
             # begin padding data at time 1/5th bin width before first time stamp
             fill_data.append([df['time'].iloc[0]-self.output_bin_width/5,0])                    # add zero at beginning
@@ -1161,16 +1165,17 @@ if __name__ == '__main__':
     # sim.plot_scint(1,[0,0,0],1,True,100,2000)
     # sim.plot_scint(4,[0,0,0],1,True,100,2000)
     # sim.plot_particle_dist(100)
+    sim.max_simulated_reflections = 60
+    # sim.V = np.linspace(100,1000,8)
     sim.mean_free_path_scints = 0.00024
-    sim.max_simulated_reflections = 4
-    sim.run(1)
+    sim.run(5)
     # save = []
     # for i in range(100):
     #     save.append(sim.scint_taskT1(0,0,0,0))
     
     # sim.particle_task(2)
     # sim.num_particles = 4000
-    sim.to_csv()
+    sim.to_csv(output_both=True)
     # sim.load_extradata(filename='monte_carlo_extradata4000chT1_07_01_2023.txt')
     # sim.plot_xydistance_distr()
     # sim.plot_distPMT_proptime()
