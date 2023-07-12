@@ -376,7 +376,7 @@ class Simulation:
    
     
     """Run simulation with default 1 particle or arg[0] as number of particles and a time seperation of 'delta_t'=1e-5"""
-    @profile(precision=4)
+    # @profile(precision=4)
     def run(self, *arg, **kwargs):
         import gc
         freeze_support()
@@ -392,17 +392,21 @@ class Simulation:
         times = []
         points = []
         photons = []
+        particleID = []
+        i = 0
         with Pool(processes=cpu_count()-1) as pool:
             res = pool.map(self.particle_task, range(self.num_particles))
             for (time_i, point_i, photon_i) in res:
+                i = 0
                 times.extend(time_i)
                 points.extend(point_i)
                 photons.extend(photon_i)
+                particleID.extend(np.repeat(i, len(time_i))) # particle it belongs to
+                i += 1
         logendparticle = perf_counter()
         N = np.sum(photons)
         print("Photons generated", N)
-        times = np.asarray(times); points = np.asarray(points); photons = np.asarray(photons)
-
+        times = np.asarray(times); points = np.asarray(points); photons = np.asarray(photons); particleID = np.asarray(particleID)
         # RETURNS A FILE
         # SPLIT HERE
         # RUN #2
@@ -421,16 +425,23 @@ class Simulation:
         self.T4_prop_times = []
         self.T1_interactions = []
         self.T4_interactions = []
+        self.T1_part_ids = []
+        self.T4_part_ids = []
         T1points = (points[:])[points[:,2] >= self.T1z]
         T1times = (times[:])[points[:,2] >= self.T1z]
         T1photons = (photons[:])[points[:,2] >= self.T1z]
+        T1part_ids = (particleID[:])[points[:,2] >= self.T1z]
+        T1part_ids = np.repeat(T1part_ids, T1photons.astype(int), axis=0) # big id bank
         T4points = (points[:])[points[:,2] < self.T1z]
         T4times = (times[:])[points[:,2] < self.T1z]
         T4photons = (photons[:])[points[:,2] < self.T1z]
+        T4part_ids = (particleID[:])[points[:,2] < self.T1z]
+        T4part_ids = np.repeat(T4part_ids, T4photons.astype(int), axis=0) # big id bank
         print(f"Photons in T1: {np.sum(T1photons)} and Photons in T4: {np.sum(T4photons)}")
         del times; del points; del photons; # remove copies
         gc.collect()
         logstartphoton = perf_counter()
+
         # check this link https://stackoverflow.com/questions/14749897/python-multiprocessing-memory-usage
         with Pool(processes=cpu_count()) as pool: # this way of making the pool causes all the data to copy! 
             print("T1 Photon Propagation working...")
@@ -440,20 +451,22 @@ class Simulation:
             T4res = pool.starmap(self.scint_taskT4, np.repeat(np.c_[T4points,T4times],T4photons.astype(int), axis=0))
             print("Done!")
             print("Unzipping reuslts into arrays...")
-            for (T1hit_PMT, T1travel_time, T1tot_dist, T1endpt, T1bounces, T1prop) in T1res: # check if moving starmap here helps
+            for (T1hit_PMT, T1travel_time, T1tot_dist, T1endpt, T1bounces, T1prop),T1part_id in zip(T1res, T1part_ids): # check if moving starmap here helps
                 if T1hit_PMT:
                     T1_input_times.append(T1travel_time)
                     self.T1_prop_dist.append(T1tot_dist)
                     self.T1_endpoint_dist.append(T1endpt)
                     self.T1_prop_times.append(T1prop)
                     self.T1_interactions.append(T1bounces)
-            for (T4hit_PMT, T4travel_time, T4tot_dist, T4endpt, T4bounces, T4prop) in T4res: # check if moving starmap here helps
+                    self.T1_part_ids.append(T1part_id)
+            for (T4hit_PMT, T4travel_time, T4tot_dist, T4endpt, T4bounces, T4prop),T4part_id in zip(T4res, T4part_ids): # check if moving starmap here helps
                 if T4hit_PMT:
                     T4_input_times.append(T4travel_time)
                     self.T4_prop_dist.append(T4tot_dist)
                     self.T4_endpoint_dist.append(T4endpt)
                     self.T4_prop_times.append(T4prop)
                     self.T4_interactions.append(T4bounces)
+                    self.T4_part_ids.append(T4part_id)
         logendtime = perf_counter()
         # PRINT RESULTS
         print("TIME ANALYSIS:")
@@ -508,8 +521,8 @@ class Simulation:
         # OUTPUT FORMATTING
         if output_extra or output_both:
             print("Exporting Extra Data...")
-            dft1 = pd.DataFrame({'T1_prop_dist':self.T1_prop_dist,'T1_endpoint_dist':self.T1_endpoint_dist, 'T1_prop_times':self.T1_prop_times, 'T1_interactions':self.T1_interactions})
-            dft4 = pd.DataFrame({'T4_prop_dist':self.T4_prop_dist,'T4_endpoint_dist':self.T4_endpoint_dist, 'T4_prop_times':self.T4_prop_times, 'T4_interactions':self.T4_interactions})
+            dft1 = pd.DataFrame({'T1_part_ids':self.T1_part_ids,'time':self.output_times_channelT1,'T1_prop_dist':self.T1_prop_dist,'T1_endpoint_dist':self.T1_endpoint_dist, 'T1_prop_times':self.T1_prop_times, 'T1_interactions':self.T1_interactions})
+            dft4 = pd.DataFrame({'T4_part_ids':self.T4_part_ids,'time':self.output_times_channelT4,'T4_prop_dist':self.T4_prop_dist,'T4_endpoint_dist':self.T4_endpoint_dist, 'T4_prop_times':self.T4_prop_times, 'T4_interactions':self.T4_interactions})
             dft1.to_csv('monte_carlo_extradata'+str(self.num_particles)+'chT1_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt') # default sep=','
             dft4.to_csv('monte_carlo_extradata'+str(self.num_particles)+'chT4_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt') # default sep=','
             if not output_both:
@@ -583,13 +596,18 @@ class Simulation:
         dtime = rawtime[limit]
         dtvoltage = rawVoltage[limit]
         tdiff = np.diff(dtime)
+        first_particle = True
+        condition_0 = (grad > 0) & (grad < 0.001)
         condition = tdiff > self.seperation_time/1e12/10 # check if next point is 10ns away
         count = 0
         start_index = 0
         for i in range(len(tdiff)): # for number of particles we expect
             if count > num-1:
                 return np.array(out)
-            if condition[i]: # if condition is true at index i
+            if condition[i] or condition_0[i]: # if condition is true at index i
+                if first_particle:
+                    condition_0 = False
+                    first_particle = False
                 times = dtime[start_index:i+1] # take snippet of time from starting index flag to index i
                 Voltages = dtvoltage[start_index:i+1]
                 start_index = i+1 # reset flag to next position
@@ -629,7 +647,7 @@ class Simulation:
         # return np.array(out)
     
     """LTSpice Command to Analyze, Simulate and Calculate TOF"""
-    def ltspice(self, filedate=None, filenum=None):
+    def ltspice(self, filedate=None, filenum=None, filesep=None):
         print("\n##################################")
         print("Running LTSpice on each channel...")
         print("###################################\n")
@@ -646,16 +664,19 @@ class Simulation:
         # filename_ch1 = os.path.abspath('monte_carlo_input<X>ch1_<MM>_<DD>_<YYYY>.txt')
         date = datetime.now().strftime('%m_%d_%Y') # Defaults
         num_part = self.num_particles
+        sep_part = self.seperation_time
         if filedate is not None: # Take input given correct format
             date = filedate
         if filenum is not None: # Take input given correct integer number
             num_part = int(filenum)
+        if filesep is not None:
+            sep_part = int(filesep)
         filename_ch1 = os.path.abspath('monte_carlo_input'+str(num_part)+'ch1_'+str(date)+'.txt')
         filename_ch4 = os.path.abspath('monte_carlo_input'+str(num_part)+'ch4_'+str(date)+'.txt')
         for filename,strname in zip([filename_ch1,filename_ch4],['ch1','ch4']):
             print('PWL file='+str(filename))
             LTC.set_element_model('I1', 'PWL file='+str(filename))
-            LTC.add_instructions("; Simulation settings", f".tran 0 {num_part}.5u 0 0.002u") # fix this to adjust for time seperation
+            LTC.add_instructions("; Simulation settings", f".tran 0 {int(round(num_part*sep_part/1e6,0))}.5u 0 0.002u") # fix this to adjust for time seperation
             # print(LTC.get_component_info('I1')) # to check if correctly set
             LTC.run(run_filename=f'PHAReduced_{strname}.net')
             LTC.wait_completion()
@@ -793,6 +814,10 @@ class plotter:
         T1extra_data = pd.read_csv(fileT1)
         T4extra_data = pd.read_csv(fileT4)
         # If require to replace, replace
+        self.T1_part_ids = T1extra_data['T1_part_ids']
+        self.T4_part_ids = T4extra_data['T4_part_ids']
+        self.T1_extratimes = T1extra_data['time']
+        self.T4_extratimes = T4extra_data['time']
         self.T1_prop_dist = T1extra_data['T1_prop_dist']
         self.T4_prop_dist = T4extra_data['T4_prop_dist']
         self.T1_endpoint_dist = T1extra_data['T1_endpoint_dist']
@@ -1139,6 +1164,9 @@ class plotter:
             self.FinalToF = np.append(self.FinalToF, new_ToF_data.to_numpy())
     
     def plotToF(self):
+        if not hasattr(self, 'FinalToF'):
+            print("Need to run calc_ToF or load_ToF result file")
+            return
         import matplotlib.pyplot as plt
         from scipy.optimize import curve_fit
         # Setup least squares loss for guassian function with 4 parameters (amplitude, mean, stddev, bias)
@@ -1167,34 +1195,68 @@ class plotter:
         plt.legend(fontsize=14)
         plt.show()
 
+    def correct_tof(self):
+        if not hasattr(self, 'FinalToF'): # assume final tof found
+            print("Need to import ToF result file!")
+            return
+        if not hasattr(self, 'T1_prop_times') or not hasattr(self, 'T4_prop_times'): # assume extradata loaded
+            print("Need to import ToF extradata files!")
+            return
+        self.plotToF()
+        import matplotlib.pyplot as plt
+        fig0, ax0 = plt.subplots()
+        up_bound = np.quantile(self.FinalToF, 0.95) # should be already defined in plotToF()
+        low_bound = np.quantile(self.FinalToF, 0.05)
+        # Plot histogram
+        # DEFINE PMT4dist, PMT1dist
+        # correction = self.FinalToF + self.n_2(PMT4dist - PMT1dist) 
+        correction = np.zeros(len(self.FinalToF))
+        for i in range(len(self.FinalToF)):
+            propagation_mean = np.mean(self.T1_prop_times[self.T1_part_ids == i])/1e12
+            correction[i] = self.FinalToF[i]-propagation_mean
+        ax0.hist(self.FinalToF, bins=np.linspace(low_bound-1e-9,up_bound+1e-9,125), histtype='step', edgecolor='r', linewidth=2)
+        ax0.hist(correction, bins=np.linspace(low_bound-1e-9,up_bound+1e-9,125), histtype='step', edgecolor='g', linewidth=2)
+        ax0.set_xlabel('time [s]', fontsize=14)
+        ax0.set_ylabel('Counts', fontsize=14)
+        ax0.grid()
+        plt.xticks(fontsize=12)
+        plt.yticks(fontsize=12)
+        ax0.legend(fontsize=14)
+        plt.show()
+
 
 if __name__ == '__main__':
+
+    ##########################################
+    # DECLARE SIMULATION AND PLOTTER CLASSES
+    ##########################################
     sim = Simulation()
     # plot = plotter(sim)
-    # plot.load_ToF(3991, filename='result_3991_of_4000_06_12_2023.txt')
-    # plot.plotToF()
-    # sim.plot_scint(1,[0,0,0],1,True,100,2000)
-    # sim.plot_scint(4,[0,0,0],1,True,100,2000)
-    # sim.plot_particle_dist(100)
+
+    #####################
+    # RUN SIMULATION 
+    #####################
     sim.max_simulated_reflections = 60
-    # sim.V = np.linspace(100,1000,8)
-    # sim.mean_free_path_scints = 0.00024
-    sim.run(1)
-    # save = []
-    # for i in range(100):
-    #     save.append(sim.scint_taskT1(0,0,0,0))
-    
-    # sim.particle_task(2)
+    # sim.mean_free_path_scints = 0.00024 # cm -> 2.4 micrometers
     # sim.num_particles = 4000
-    # sim.to_csv(output_both=True)
-    # sim.load_extradata(filename='monte_carlo_extradata4000chT1_07_01_2023.txt')
-    # sim.plot_xydistance_distr()
-    # sim.plot_distPMT_proptime()
-    # sim.plot_gen_PE(10)
-    # sim.to_csv()
-    # sim.ltspice(filedate='07_01_2023',filenum=4000)
-    # sim.calc_ToF(filedate='07_01_2023',filenum=4000)
+    sim.run(4000)
+    sim.to_csv(output_both=True)
+
+    ###############################################################
+    # RUN LTSPICE AND CALCULATE TIME OF FLIGHT --> SAVE TO FILE
+    ###############################################################
+    # sim.ltspice(filedate='07_12_2023',filenum=1)
+    # sim.calc_ToF(filedate='07_12_2023',filenum=1)
     # sim.save_ToF()
+
+    #########################################
+    # LOAD CORRECTED MODEL AND PLOT EXTRA DATA
+    #########################################
+    # plot.load_extradata(filename='monte_carlo_extradata1chT1_07_12_2023.txt')
+    # plot.plot_xydistance_distr()
+    # plot.plot_distPMT_proptime()
+    # plot.load_ToF(1, filename='result_1_of_1_07_12_2023.txt')
+    # plot.correct_tof()
     # sim.load_ToF(3858, filename='result_3858_of_4000_07_02_2023.txt')
     # sim.plotToF()
 
