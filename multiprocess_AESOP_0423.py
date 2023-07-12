@@ -12,7 +12,7 @@ import random
 from time import perf_counter
 from datetime import timedelta, datetime
 from multiprocessing import Pool, cpu_count, freeze_support
-# from memory_profiler import profile
+from memory_profiler import profile
 
 
 class Simulation:
@@ -306,7 +306,7 @@ class Simulation:
                     cur_o = points[-1]                                             # current point 
                     next_o = (cur_o+mean_free_path*u).round(round_const)           # next point
                     inside_scint = (next_o[2] <= (Ttop)) & (next_o[2] >= Tbottom) & (self.scint_condition(next_o, Tradius, num) | self.lg_condition(next_o, Tcorner, num))
-        # print(f"time elapsed in scintillators: {np.abs(times[1]-times[-1]):.2f}ps total scintillation points: {len(points[1:])}")
+        # write to file compressed arrays float 64s
         return np.array(times, dtype=np.float64)[1:], np.array(points, dtype=np.float64)[1:], np.array(photons[1:], dtype=np.float64)
 
     # @profile(precision=4)
@@ -335,9 +335,9 @@ class Simulation:
         if keepdata:
             if (i < N_max):
                 track_history = track_history[:i+1,:]
-            return PMT_hit_condition, t+dt, track_history
+            return PMT_hit_condition, (t+dt), track_history
         else:
-            return PMT_hit_condition, t+dt, total_dist, endpoint_dist, i, dt
+            return PMT_hit_condition, (t+dt), total_dist, endpoint_dist, i, dt
 
     # PMT SIMULATION
     def photontoElectrons(self, photons):
@@ -359,6 +359,7 @@ class Simulation:
                                                 T4_corner=[self.T1_radius,-self.T1_radius], mean_free_path=self.mean_free_path_scints, 
                                                 photons_per_E=self.photons_produced_per_MeV, prob_scint=self.pr_of_scintillation)
     def scint_taskT1(self, xpoint, ypoint, zpoint, time_i):
+        # READ A SMALL FILE WITH LITTLE MiB --> compressed file output
         point_i = np.hstack((xpoint,ypoint,zpoint))
         return self.scintillator_monte_carlo(point_i, notabsorbed=True, scint_radius=self.T1_radius, 
                                                         scint_plane=np.array([self.T1z,self.T1top]),  
@@ -375,7 +376,9 @@ class Simulation:
    
     
     """Run simulation with default 1 particle or arg[0] as number of particles and a time seperation of 'delta_t'=1e-5"""
+    @profile(precision=4)
     def run(self, *arg, **kwargs):
+        import gc
         freeze_support()
         if arg:
             self.num_particles = int(arg[0])
@@ -399,6 +402,12 @@ class Simulation:
         N = np.sum(photons)
         print("Photons generated", N)
         times = np.asarray(times); points = np.asarray(points); photons = np.asarray(photons)
+
+        # RETURNS A FILE
+        # SPLIT HERE
+        # RUN #2
+        
+
         # SIMULATE EACH PHOTON PATH IN BOTH SCINTILLATORS
         # Gather TOF data
         T1_input_times = []
@@ -420,6 +429,7 @@ class Simulation:
         T4photons = (photons[:])[points[:,2] < self.T1z]
         print(f"Photons in T1: {np.sum(T1photons)} and Photons in T4: {np.sum(T4photons)}")
         del times; del points; del photons; # remove copies
+        gc.collect()
         logstartphoton = perf_counter()
         # check this link https://stackoverflow.com/questions/14749897/python-multiprocessing-memory-usage
         with Pool(processes=cpu_count()) as pool: # this way of making the pool causes all the data to copy! 
@@ -460,6 +470,7 @@ class Simulation:
         print("RATIO T4   total photons ", np.sum(T4photons),"total incident photons", len(T4_input_times), f"ratio={np.sum(T4photons)/len(T4_input_times):.2f}")
         print("DISTANCE: ")
         del T1points; del T1times; del T1photons; del T4points; del T4times; del T4photons; # remove unused variables
+        gc.collect()
         # print(T4_input_times)
         # BEGIN SIMULATING PMT PULSE
         signals_channelT1 = []
@@ -1167,15 +1178,15 @@ if __name__ == '__main__':
     # sim.plot_particle_dist(100)
     sim.max_simulated_reflections = 60
     # sim.V = np.linspace(100,1000,8)
-    sim.mean_free_path_scints = 0.00024
-    sim.run(5)
+    # sim.mean_free_path_scints = 0.00024
+    sim.run(1)
     # save = []
     # for i in range(100):
     #     save.append(sim.scint_taskT1(0,0,0,0))
     
     # sim.particle_task(2)
     # sim.num_particles = 4000
-    sim.to_csv(output_both=True)
+    # sim.to_csv(output_both=True)
     # sim.load_extradata(filename='monte_carlo_extradata4000chT1_07_01_2023.txt')
     # sim.plot_xydistance_distr()
     # sim.plot_distPMT_proptime()
