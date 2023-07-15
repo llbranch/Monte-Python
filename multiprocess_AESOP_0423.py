@@ -65,6 +65,7 @@ class Simulation:
         self.max_simulated_reflections = 40
         self.pmt_electron_travel_time = 0 # approx 16 ns
         self.artificial_gain = 1 # gain factor
+        self.max_pmt_current_output = 80e-3 # mA
         self.pr_absorption = 0.1 # probability of boundary absorbing
         self.seperation_time = 1e5 # ps 
         self.output_bin_width = 100 # ps
@@ -565,7 +566,10 @@ class Simulation:
                 gaussian = norm.pdf(t_binned[index_lower:index_upper], loc=time[i], scale=self.sigma_smoothing)*self.sigma_smoothing*y/4
                 # ADD TO CORRECT BINS
                 for i,y_add in enumerate(gaussian):
-                    y_binned[index_lower+i] += y_add
+                    if y_binned[index_lower+i]+y_add < self.max_pmt_current_output:
+                        y_binned[index_lower+i] += y_add
+                    else:
+                        y_binned[index_lower+i] = self.max_pmt_current_output
 
             df = pd.DataFrame({'time':t_binned,'current':y_binned}).sort_values(by=['time'])
             print("Formatting PWL dataframe...")
@@ -814,10 +818,12 @@ class plotter:
         T1extra_data = pd.read_csv(fileT1)
         T4extra_data = pd.read_csv(fileT4)
         # If require to replace, replace
-        self.T1_part_ids = T1extra_data['T1_part_ids']
-        self.T4_part_ids = T4extra_data['T4_part_ids']
-        self.T1_extratimes = T1extra_data['time']
-        self.T4_extratimes = T4extra_data['time']
+        if 'T1_part_ids' in T1extra_data and 'T4_part_ids' in T4extra_data:
+            self.T1_part_ids = T1extra_data['T1_part_ids']
+            self.T4_part_ids = T4extra_data['T4_part_ids']
+        if 'time' in T1extra_data and 'time' in T4extra_data:
+            self.T1_extratimes = T1extra_data['time']
+            self.T4_extratimes = T4extra_data['time']
         self.T1_prop_dist = T1extra_data['T1_prop_dist']
         self.T4_prop_dist = T4extra_data['T4_prop_dist']
         self.T1_endpoint_dist = T1extra_data['T1_endpoint_dist']
@@ -943,23 +949,23 @@ class plotter:
             fig1, ax1 = plt.subplots(1,2)
             fig1.set_size_inches(13,6)
             # ax1[0].scatter(self.T1_prop_dist, self.T1_interactions, s=10, alpha=0.5, facecolors='none', edgecolors='C0')
-            h0 = ax1[0].hist2d(self.T1_prop_dist, self.T1_interactions, bins=[250,40], range=[[0,np.mean(self.T1_prop_dist)+np.std(self.T1_prop_dist)*5],[0,max(self.T1_interactions)]], cmin = 1)
+            h0 = ax1[0].hist2d(self.T1_prop_times, self.T1_interactions, bins=[250,40], range=[[0,np.mean(self.T1_prop_times)+np.std(self.T1_prop_times)*5],[0,max(self.T1_interactions)]], cmin = 1)
             fig1.colorbar(h0[3], ax=ax1[0])
             # sns.kdeplot(self.T1_prop_dist, self.T1_interactions, n_levels=250, cbar=True, shade_lowest=False, cmap='viridis', ax=ax1[0])
-            ax1[0].axvline(self.T1_radius, color='C2', label='T1 radius')
-            ax1[0].set_xlabel('Distance [cm]')
+            # ax1[0].axvline(self.T1_radius, color='C2', label='T1 radius')
+            ax1[0].set_xlabel('Time [ps]')
             ax1[0].set_ylabel('# Interactions with Boundary')
-            ax1[0].set_title('T1 Propagation XY Distance vs. Interactions / Reflections')
+            ax1[0].set_title('T1 Propagation Times vs. Interactions / Reflections')
             ax1[0].legend()
             ax1[0].grid()
             # ax1[1].scatter(self.T4_prop_dist, self.T4_interactions, s=10, alpha=0.3, facecolors='none', edgecolors='C0')
-            h1 = ax1[1].hist2d(self.T4_prop_dist, self.T4_interactions, bins=[250,40], range=[[0,np.mean(self.T4_prop_dist)+np.std(self.T4_prop_dist)*5],[0,max(self.T4_interactions)]], cmin = 1)
+            h1 = ax1[1].hist2d(self.T4_prop_times, self.T4_interactions, bins=[250,40], range=[[0,np.mean(self.T4_prop_times)+np.std(self.T4_prop_times)*5],[0,max(self.T4_interactions)]], cmin = 1)
             fig1.colorbar(h1[3], ax=ax1[1])
             # sns.kdeplot(self.T4_prop_dist, self.T4_interactions, n_levels=250, cbar=True, shade_lowest=False, cmap='viridis', ax=ax1[1])
-            ax1[1].axvline(self.T4_radius, color='C2',label='T4 radius')
-            ax1[1].set_xlabel('Distance [cm]')
+            # ax1[1].axvline(self.T4_radius, color='C2',label='T4 radius')
+            ax1[1].set_xlabel('Time [ps]')
             ax1[1].set_ylabel('# Interactions with Boundary')
-            ax1[1].set_title('T4 Propagation XY Distance vs. Interactions / Reflections')
+            ax1[1].set_title('T4 Propagation Times vs. Interactions / Reflections')
             ax1[1].legend()
             ax1[1].grid()
             plt.show()
@@ -1231,7 +1237,7 @@ if __name__ == '__main__':
     # DECLARE SIMULATION AND PLOTTER CLASSES
     ##########################################
     sim = Simulation()
-    # plot = plotter(sim)
+    plot = plotter(sim)
 
     #####################
     # RUN SIMULATION 
@@ -1239,8 +1245,8 @@ if __name__ == '__main__':
     sim.max_simulated_reflections = 60
     # sim.mean_free_path_scints = 0.00024 # cm -> 2.4 micrometers
     # sim.num_particles = 4000
-    sim.run(4000)
-    sim.to_csv(output_both=True)
+    # sim.run(4000)
+    # sim.to_csv(output_both=True)
 
     ###############################################################
     # RUN LTSPICE AND CALCULATE TIME OF FLIGHT --> SAVE TO FILE
@@ -1252,7 +1258,7 @@ if __name__ == '__main__':
     #########################################
     # LOAD CORRECTED MODEL AND PLOT EXTRA DATA
     #########################################
-    # plot.load_extradata(filename='monte_carlo_extradata1chT1_07_12_2023.txt')
+    # plot.load_extradata(filename='monte_carlo_extradata4000chT1_07_11_2023.txt')
     # plot.plot_xydistance_distr()
     # plot.plot_distPMT_proptime()
     # plot.load_ToF(1, filename='result_1_of_1_07_12_2023.txt')
