@@ -1,0 +1,259 @@
+Filename: mainTof.py
+
+Line #    Mem usage    Increment  Occurrences   Line Contents
+=============================================================
+    33 101.6445 MiB 101.6445 MiB           1   @profile(precision=4, stream=fp)
+    34                                         # @profile(precision =4)
+    35                                         def run(simClass, *arg, **kwargs):
+    36 101.6445 MiB   0.0000 MiB           1       import gc
+    37 101.6445 MiB   0.0000 MiB           1       freeze_support() # best practice 
+    38 101.6445 MiB   0.0000 MiB           1       if arg:
+    39 101.6445 MiB   0.0000 MiB           1           simClass.num_particles = int(arg[0])
+    40 101.6445 MiB   0.0000 MiB           1           print(f"Generating {simClass.num_particles} particles now...")
+    41                                             else:
+    42                                                 simClass.num_particles = 1
+    43                                                 print(f"Generating {simClass.num_particles} particle now...")
+    44 101.6445 MiB   0.0000 MiB           1       simClass.seperation_time = kwargs.get('delta_t', simClass.seperation_time) # in ps
+    45 101.6445 MiB   0.0000 MiB           1       logstarttime = perf_counter()
+    46                                             # FIND PARTICLE PATH
+    47 101.6445 MiB   0.0000 MiB           1       times = []
+    48 101.6445 MiB   0.0000 MiB           1       points = []
+    49 101.6445 MiB   0.0000 MiB           1       photons = []
+    50 101.6445 MiB   0.0000 MiB           1       particleID = []
+    51 101.6445 MiB   0.0000 MiB           1       i = 0
+    52  94.9297 MiB  -6.7148 MiB           1       with Pool(processes=cpu_count(), maxtasksperchild=2) as pool:
+    53  95.4062 MiB   0.4766 MiB           1           res = pool.map(simClass.particle_task, range(simClass.num_particles))
+    54                                         
+    55  95.4062 MiB   0.0000 MiB           1           pool.close()
+    56  95.8086 MiB   0.4023 MiB           1           pool.join()
+    57                                         
+    58                                         
+    59                                                 # print(f'SIZE OF RES: ', sys.getsizeof(res))
+    60                                                 # start = perf_counter()
+    61                                         
+    62  97.0742 MiB   0.0000 MiB           2           for (time_i, point_i, photon_i) in res:
+    63  95.8086 MiB   0.0000 MiB           1               i = 0
+    64  96.0508 MiB   0.2422 MiB           1               times.extend(time_i)
+    65  96.6133 MiB   0.5625 MiB           1               points.extend(point_i)
+    66  96.9180 MiB   0.3047 MiB           1               photons.extend(photon_i)
+    67  97.0742 MiB   0.1562 MiB           1               particleID.extend(np.repeat(i, len(time_i))) # particle it belongs to
+    68  97.0742 MiB   0.0000 MiB           1               i += 1
+    69                                         
+    70                                                 # end = perf_counter() -start
+    71                                         
+    72  97.0742 MiB   0.0000 MiB           1       logendparticle = perf_counter()
+    73  97.2266 MiB   0.1523 MiB           1       N = np.sum(photons)
+    74  97.2266 MiB   0.0000 MiB           1       print("Photons generated", N)
+    75  97.1172 MiB  -0.1094 MiB           1       times = np.asarray(times); points = np.asarray(points); photons = np.asarray(photons); particleID = np.asarray(particleID)
+    76                                         
+    77                                             # print(f'SIZE OF TIMES, POINTS, ETC: ', sys.getsizeof(times))
+    78                                             # print('Time to unpack times,points, etc.', end)
+    79                                         
+    80                                         
+    81                                             # RETURNS A FILE
+    82                                             # SPLIT HERE
+    83                                             # RUN #2
+    84                                             
+    85                                         
+    86                                             # SIMULATE EACH PHOTON PATH IN BOTH SCINTILLATORS
+    87                                             # Gather TOF data
+    88  97.1172 MiB   0.0000 MiB           1       T1_input_times = []
+    89  97.1172 MiB   0.0000 MiB           1       T4_input_times = []
+    90                                             # Gather Extra Data for analysis
+    91  97.1172 MiB   0.0000 MiB           1       simClass.T1_prop_dist = []
+    92  97.1172 MiB   0.0000 MiB           1       simClass.T4_prop_dist = []
+    93  97.1172 MiB   0.0000 MiB           1       simClass.T1_endpoint_dist = []
+    94  97.1172 MiB   0.0000 MiB           1       simClass.T4_endpoint_dist = []
+    95  97.1172 MiB   0.0000 MiB           1       simClass.T1_prop_times = []
+    96  97.1172 MiB   0.0000 MiB           1       simClass.T4_prop_times = []
+    97  97.1172 MiB   0.0000 MiB           1       simClass.T1_interactions = []
+    98  97.1172 MiB   0.0000 MiB           1       simClass.T4_interactions = []
+    99  97.1172 MiB   0.0000 MiB           1       simClass.T1_part_ids = []
+   100  97.1172 MiB   0.0000 MiB           1       simClass.T4_part_ids = []
+   101  97.1172 MiB   0.0000 MiB           1       T1points = (points[:])[points[:,2] >= simClass.T1z]
+   102  97.1172 MiB   0.0000 MiB           1       T1times = (times[:])[points[:,2] >= simClass.T1z]
+   103  97.1172 MiB   0.0000 MiB           1       T1photons = (photons[:])[points[:,2] >= simClass.T1z]
+   104  97.1172 MiB   0.0000 MiB           1       T1part_ids = (particleID[:])[points[:,2] >= simClass.T1z]
+   105  97.1172 MiB   0.0000 MiB           1       T1part_ids = np.repeat(T1part_ids, T1photons.astype(int), axis=0) # big id bank
+   106  97.1172 MiB   0.0000 MiB           1       T4points = (points[:])[points[:,2] < simClass.T1z]
+   107  97.1172 MiB   0.0000 MiB           1       T4times = (times[:])[points[:,2] < simClass.T1z]
+   108  97.1172 MiB   0.0000 MiB           1       T4photons = (photons[:])[points[:,2] < simClass.T1z]
+   109  97.1172 MiB   0.0000 MiB           1       T4part_ids = (particleID[:])[points[:,2] < simClass.T1z]
+   110  97.3242 MiB   0.2070 MiB           1       T4part_ids = np.repeat(T4part_ids, T4photons.astype(int), axis=0) # big id bank
+   111  97.3242 MiB   0.0000 MiB           1       print(f"Photons in T1: {np.sum(T1photons)} and Photons in T4: {np.sum(T4photons)}")
+   112  97.3242 MiB   0.0000 MiB           1       del times; del points; del photons; # remove copies
+   113                                             # gc.collect()
+   114                                             
+   115  97.3242 MiB   0.0000 MiB           1       logstartphoton = perf_counter()
+   116                                         
+   117                                             # check this link https://stackoverflow.com/questions/14749897/python-multiprocessing-memory-usage
+   118  97.5547 MiB   0.2305 MiB           1       with Pool(processes=cpu_count(), maxtasksperchild=2) as pool: # this way of making the pool causes all the data to copy! 
+   119  97.5547 MiB   0.0000 MiB           1           print("T1 Photon Propagation working...")
+   120                                         
+   121                                                 # start = perf_counter()
+   122 101.6484 MiB   4.0938 MiB           1           T1res = pool.starmap(simClass.scint_taskT1, np.repeat(np.c_[T1points,T1times],T1photons.astype(int), axis=0))
+   123                                                 # end = perf_counter() - start
+   124                                                 # print("Time to process T1:", end)
+   125                                         
+   126 101.6484 MiB   0.0000 MiB           1           print("Done!")
+   127                                         
+   128                                         
+   129 101.6484 MiB   0.0000 MiB           1           print("T4 Photon Propagation working...")
+   130                                                 # start = perf_counter()
+   131 110.7188 MiB   9.0703 MiB           1           T4res = pool.starmap(simClass.scint_taskT4, np.repeat(np.c_[T4points,T4times],T4photons.astype(int), axis=0))
+   132                                                 # end = perf_counter() - start
+   133                                                 # print("Time to process T4:", end)
+   134                                         
+   135 110.7188 MiB   0.0000 MiB           1           print("Done!")
+   136 110.7188 MiB   0.0000 MiB           1           print("Unzipping reuslts into arrays...")
+   137                                         
+   138 110.7188 MiB   0.0000 MiB           1           pool.close()
+   139 110.7227 MiB   0.0039 MiB           1           pool.join()
+   140                                         
+   141                                                 # start = perf_counter()
+   142 110.7227 MiB   0.0000 MiB       16207           for (T1hit_PMT, T1travel_time, T1tot_dist, T1endpt, T1bounces, T1prop),T1part_id in zip(T1res, T1part_ids): # check if moving starmap here helps
+   143 110.7227 MiB   0.0000 MiB       16206               if T1hit_PMT:
+   144 110.7227 MiB   0.0000 MiB           2                   T1_input_times.append(T1travel_time)
+   145 110.7227 MiB   0.0000 MiB           2                   simClass.T1_prop_dist.append(T1tot_dist)
+   146 110.7227 MiB   0.0000 MiB           2                   simClass.T1_endpoint_dist.append(T1endpt)
+   147 110.7227 MiB   0.0000 MiB           2                   simClass.T1_prop_times.append(T1prop)
+   148 110.7227 MiB   0.0000 MiB           2                   simClass.T1_interactions.append(T1bounces)
+   149 110.7227 MiB   0.0000 MiB           2                   simClass.T1_part_ids.append(T1part_id)
+   150                                                 # end = perf_counter() - start
+   151                                                 # print("Time to unpack T1:", end)
+   152                                         
+   153                                                 # start = perf_counter()
+   154 110.7227 MiB   0.0000 MiB       33031           for (T4hit_PMT, T4travel_time, T4tot_dist, T4endpt, T4bounces, T4prop),T4part_id in zip(T4res, T4part_ids): # check if moving starmap here helps
+   155 110.7227 MiB   0.0000 MiB       33030               if T4hit_PMT:
+   156 110.7227 MiB   0.0000 MiB           9                   T4_input_times.append(T4travel_time)
+   157 110.7227 MiB   0.0000 MiB           9                   simClass.T4_prop_dist.append(T4tot_dist)
+   158 110.7227 MiB   0.0000 MiB           9                   simClass.T4_endpoint_dist.append(T4endpt)
+   159 110.7227 MiB   0.0000 MiB           9                   simClass.T4_prop_times.append(T4prop)
+   160 110.7227 MiB   0.0000 MiB           9                   simClass.T4_interactions.append(T4bounces)
+   161 110.7227 MiB   0.0000 MiB           9                   simClass.T4_part_ids.append(T4part_id)
+   162                                                 # end = perf_counter() - start
+   163                                                 # print("Time to unpack T4:", end)
+   164                                         
+   165 110.7227 MiB   0.0000 MiB           1       logendtime = perf_counter()
+   166                                             # PRINT RESULTS
+   167 110.7227 MiB   0.0000 MiB           1       print("TIME ANALYSIS:")
+   168 110.7227 MiB   0.0000 MiB           1       pgtime = timedelta(seconds=logendparticle-logstarttime)
+   169 110.7227 MiB   0.0000 MiB           1       phtime = timedelta(seconds=logendtime-logstartphoton)
+   170 110.7227 MiB   0.0000 MiB           1       ttime = timedelta(seconds=logendtime-logstarttime)
+   171 110.7227 MiB   0.0000 MiB           1       print(f"Generation of Particles     {str(pgtime)}")
+   172 110.7227 MiB   0.0000 MiB           1       print(f"Simulation of Photon Travel {str(phtime)}")
+   173 110.7227 MiB   0.0000 MiB           1       print(f"Total Time Elapsed:         {str(ttime)}")
+   174 110.7227 MiB   0.0000 MiB           1       print("RESULTS SUMMARY:")
+   175 110.7227 MiB   0.0000 MiB           1       print("HITS on T1",len(T1_input_times))
+   176 110.7266 MiB   0.0039 MiB           1       print("RATIO T1   total photons", np.sum(T1photons), "total incident photons", len(T1_input_times), f"ratio={np.sum(T1photons)/len(T1_input_times):.2f}")
+   177 110.7266 MiB   0.0000 MiB           1       print("HITS on T4",len(T4_input_times))
+   178 110.7266 MiB   0.0000 MiB           1       print("RATIO T4   total photons ", np.sum(T4photons),"total incident photons", len(T4_input_times), f"ratio={np.sum(T4photons)/len(T4_input_times):.2f}")
+   179 110.7266 MiB   0.0000 MiB           1       print("DISTANCE: ")
+   180 110.7266 MiB   0.0000 MiB           1       del T1points; del T1times; del T1photons; del T4points; del T4times; del T4photons; # remove unused variables
+   181                                             # gc.collect()
+   182                                         
+   183                                             # print(T4_input_times)
+   184                                             # BEGIN SIMULATING PMT PULSE
+   185 110.7266 MiB   0.0000 MiB           1       signals_channelT1 = []
+   186 110.7266 MiB   0.0000 MiB           1       signals_channelT4 = []
+   187 110.7266 MiB   0.0000 MiB           1       output_times_channelT1 = []
+   188 110.7266 MiB   0.0000 MiB           1       output_times_channelT4 = []
+   189 110.7266 MiB   0.0000 MiB           1       signals = []
+   190 110.7266 MiB   0.0000 MiB           1       output_times = []
+   191 110.7266 MiB   0.0000 MiB           3       for t in T1_input_times:
+   192 110.7266 MiB   0.0000 MiB           2           pmtSignal_i = simClass.photontoElectrons(1)
+   193 110.7266 MiB   0.0000 MiB           2           output_times.append(simClass.pmt_electron_travel_time+t)
+   194 110.7266 MiB   0.0000 MiB           2           output_times_channelT1.append(simClass.pmt_electron_travel_time+t)
+   195 110.7266 MiB   0.0000 MiB           2           signals.append(pmtSignal_i)
+   196 110.7266 MiB   0.0000 MiB           2           signals_channelT1.append(pmtSignal_i)
+   197 110.7266 MiB   0.0000 MiB          10       for t in T4_input_times:
+   198 110.7266 MiB   0.0000 MiB           9           pmtSignal_i = simClass.photontoElectrons(1)
+   199 110.7266 MiB   0.0000 MiB           9           output_times.append(simClass.pmt_electron_travel_time+t)
+   200 110.7266 MiB   0.0000 MiB           9           output_times_channelT4.append(simClass.pmt_electron_travel_time+t)
+   201 110.7266 MiB   0.0000 MiB           9           signals.append(pmtSignal_i)
+   202 110.7266 MiB   0.0000 MiB           9           signals_channelT4.append(pmtSignal_i)
+   203                                         
+   204                                             # CONVERTION Electron count to Current and save in array
+   205 110.8789 MiB   0.1523 MiB           1       simClass.signals = np.array(signals) * simClass.q / 1e-12 * simClass.artificial_gain # divided by 1ps 
+   206 110.8789 MiB   0.0000 MiB           1       simClass.output_times = np.array(output_times)
+   207 110.8789 MiB   0.0000 MiB           1       simClass.signals_channelT1 = np.array(signals_channelT1) * simClass.q / 1e-12 * simClass.artificial_gain
+   208 110.8789 MiB   0.0000 MiB           1       simClass.signals_channelT4 = np.array(signals_channelT4) * simClass.q / 1e-12 * simClass.artificial_gain * 0.6 # factor to limit pulses to 50miliamps and stop contant comparator firing. however, current should be smaller from Quantum Efficiency and current should be larger from 3kV potential difference across PMT dynodes instead of current 1kV potential difference
+   209 110.8789 MiB   0.0000 MiB           1       simClass.output_times_channelT1 = np.array(output_times_channelT1)
+   210 110.8789 MiB   0.0000 MiB           1       simClass.output_times_channelT4 = np.array(output_times_channelT4)
+   211                                         
+   212                                         # Output function
+   213                                         # def to_csv(simClass, **kwargs):
+   214 146.8984 MiB  36.0195 MiB           1       from scipy.stats import norm # type: ignore 
+   215 146.8984 MiB   0.0000 MiB           1       output_extra = kwargs.get('extra_data_only', False)
+   216 146.8984 MiB   0.0000 MiB           1       output_both = kwargs.get('output_both', False)
+   217                                             # OUTPUT FORMATTING
+   218 146.8984 MiB   0.0000 MiB           1       if output_extra or output_both:
+   219                                                 print("Exporting Extra Data...")
+   220                                                 dft1 = pd.DataFrame({'T1_part_ids':simClass.T1_part_ids,'time':simClass.output_times_channelT1,'T1_prop_dist':simClass.T1_prop_dist,'T1_endpoint_dist':simClass.T1_endpoint_dist, 'T1_prop_times':simClass.T1_prop_times, 'T1_interactions':simClass.T1_interactions})
+   221                                                 dft4 = pd.DataFrame({'T4_part_ids':simClass.T4_part_ids,'time':simClass.output_times_channelT4,'T4_prop_dist':simClass.T4_prop_dist,'T4_endpoint_dist':simClass.T4_endpoint_dist, 'T4_prop_times':simClass.T4_prop_times, 'T4_interactions':simClass.T4_interactions})
+   222                                                 dft1.to_csv('monte_carlo_extradata'+str(simClass.num_particles)+'chT1_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt') # default sep=','
+   223                                                 dft4.to_csv('monte_carlo_extradata'+str(simClass.num_particles)+'chT4_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt') # default sep=','
+   224                                                 if not output_both:
+   225                                                     return
+   226 146.8984 MiB   0.0000 MiB           1       print("Exporing to 2 channels...")
+   227                                             # for each channel
+   228 148.9297 MiB   0.0000 MiB           3       for time,signal,ch in zip([simClass.output_times_channelT1,simClass.output_times_channelT4],[simClass.signals_channelT1,simClass.signals_channelT4],[1,4]):
+   229                                         
+   230                                                 # from io import StringIO
+   231                                                 # from csv import writer 
+   232                                                 # output = StringIO()
+   233                                                 # csv_writer = writer(output)
+   234                                                 
+   235 148.9297 MiB   0.0000 MiB           2           print("Smoothing Signals...")
+   236 148.9297 MiB   0.0000 MiB           2           t_binned = [0.] # left edges of bins
+   237 148.9297 MiB   0.0000 MiB           2           y_binned = [0.]
+   238 148.9297 MiB   0.0000 MiB          13           for i,y in enumerate(signal):
+   239                                                     # print(f"i={i},t[{i}]={time[i]} y[{i}]={y}")
+   240 148.9297 MiB   0.0000 MiB          11               lower_bound = max(time[i]-2*simClass.sigma_smoothing,0) # 2 sigma away backward
+   241 148.9297 MiB   0.0000 MiB          11               upper_bound = min(time[i]+2*simClass.sigma_smoothing,max(time)+2*simClass.sigma_smoothing) # 2 sigma away forward
+   242                                                     # MAKE NEW DATA CENTERED AROUND PULSE
+   243 148.9297 MiB   0.0000 MiB          11               if lower_bound < max(t_binned): # if already binned
+   244 148.9297 MiB   0.0000 MiB           9                   lower_bound = t_binned[np.digitize(lower_bound, t_binned)]+simClass.output_bin_width/2
+   245 148.9297 MiB   0.0000 MiB          11               cur_x = np.arange(lower_bound,upper_bound,simClass.output_bin_width)+simClass.output_bin_width/2
+   246                                                     # print(f"cur_x from {lower_bound}-->{upper_bound}", cur_x)
+   247                                                     # ADD DATA IF NEEDED
+   248 148.9297 MiB   0.0000 MiB         182               for x in cur_x:
+   249 148.9297 MiB   0.0000 MiB         171                   if x > max(t_binned): 
+   250 148.9297 MiB   0.0000 MiB          36                       t_binned.append(x)
+   251 148.9297 MiB   0.0000 MiB          36                       y_binned.append(0)
+   252 148.9297 MiB   0.0000 MiB         135                   elif (np.digitize(x, t_binned)-1 > 0) and (np.digitize(x, t_binned) < len(t_binned)):
+   253 148.9297 MiB   0.0000 MiB         129                       index = np.digitize(x, t_binned)
+   254 148.9297 MiB   0.0000 MiB         129                       if abs(t_binned[index]-t_binned[index-1]) > simClass.output_bin_width:
+   255                                                                 t_binned.insert(index, x) # check if need -1 or just np.digitize()
+   256                                                                 y_binned.insert(index, 0) # check 
+   257                                                     # GET INDICIES
+   258 148.9297 MiB   0.0000 MiB         231               index_lower = [i for i,t in enumerate(t_binned) if t >= lower_bound][0] # left edge in time binned
+   259 148.9297 MiB   0.0000 MiB         231               index_upper = [i for i,t in enumerate(t_binned) if t <= upper_bound][-1] # right edge in time binned
+   260                                                     # GAUSSIAN SMOOTH
+   261 148.9297 MiB   0.3320 MiB          11               gaussian = norm.pdf(t_binned[index_lower:index_upper], loc=time[i], scale=simClass.sigma_smoothing)*simClass.sigma_smoothing*y/4
+   262                                                     # ADD TO CORRECT BINS
+   263 148.9297 MiB   0.0000 MiB         166               for i,y_add in enumerate(gaussian):
+   264 148.9297 MiB   0.0000 MiB         155                   if y_binned[index_lower+i]+y_add < simClass.max_pmt_current_output:
+   265 148.9297 MiB   0.0000 MiB         155                       y_binned[index_lower+i] += y_add
+   266                                                         else:
+   267                                                             y_binned[index_lower+i] = simClass.max_pmt_current_output
+   268                                         
+   269 148.9297 MiB   1.0352 MiB           2           df = pd.DataFrame({'time':t_binned,'current':y_binned}).sort_values(by=['time'])
+   270 148.9297 MiB   0.0000 MiB           2           print("Formatting PWL dataframe...")
+   271 148.9297 MiB   0.0000 MiB           2           fill_data = []                                                                      # declare empty array
+   272                                                 # begin padding data at time 1/5th bin width before first time stamp
+   273 148.9297 MiB   0.0000 MiB           2           fill_data.append([df['time'].iloc[0]-simClass.output_bin_width/5,0])                    # add zero at beginning
+   274 148.9297 MiB   0.0000 MiB          38           for i in range(len(df['time'])-1):                                                        # for each time index
+   275 148.9297 MiB   0.0000 MiB          36               if abs(df['time'].iloc[i]-df['time'].iloc[i+1]) > simClass.output_bin_width:        # if dt between signals is greater than minimum bin width
+   276 148.9297 MiB   0.0000 MiB           3                   fill_data.append([df['time'].iloc[i]+simClass.output_bin_width/5,0])            # place zero after current signal
+   277 148.9297 MiB   0.0000 MiB           3                   fill_data.append([df['time'].iloc[i+1]-simClass.output_bin_width/5,0])          # place zero before next signal
+   278 148.9297 MiB   0.0000 MiB           2           fill_data.append([df['time'].iloc[-1]+simClass.output_bin_width/5,0])                   # add zero at end
+   279 148.9297 MiB   0.0000 MiB           2           fill_data = np.array(fill_data)
+   280 148.9297 MiB   0.0000 MiB           2           fill = pd.DataFrame(fill_data, columns=['time','current'])
+   281 148.9297 MiB   0.2930 MiB           2           df = pd.concat([fill, df], ignore_index=True).sort_values(by=['time']).reset_index(drop=True)
+   282 148.9297 MiB   0.1133 MiB           2           df['time'] = df['time']/1e12
+   283 148.9297 MiB   0.0000 MiB           2           df = df[['time', 'current']] # need this for LTSpice PWL current input file to work
+   284 148.9297 MiB   0.2578 MiB           2           df.to_csv('monte_carlo_input'+str(simClass.num_particles)+'ch'+str(ch)+'_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt', float_format='%.13f', header=False, index=False, sep=' ') # PWL file formatting
+   285 148.9297 MiB   0.0000 MiB           1       print("Done!")
+
+
