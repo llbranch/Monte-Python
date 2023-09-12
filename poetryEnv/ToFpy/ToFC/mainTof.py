@@ -2,7 +2,6 @@
 # Testing .close/.join
 # without: 
 #############################
-#%%
 
 # Installs Needed 
 import numpy as np #analysis
@@ -327,5 +326,3 @@ if __name__ == '__main__':
     # results.print_stats()
     results.dump_stats("report_time.prof")
     # sys.stdout = LogFile('memory_profile_log',reportIncrementFlag=False)
-
-# %%
