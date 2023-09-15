@@ -1,17 +1,5 @@
 #############################
 # Testing .close/.join ; 8 reflections 1 particle 
-# running on one file: 
-    # Generation of Particles     0:00:00.184456
-    # Simulation of Photon Travel 0:00:13.467210
-    # Total Time Elapsed:         0:00:13.702967
-# running with module (no type; no C)
-    # Generation of Particles     0:00:00.258476
-    # Simulation of Photon Travel 0:00:12.127954
-    # Total Time Elapsed:         0:00:12.429066
-# with simple compile no typeset
-    # Generation of Particles     0:00:00.207186
-    # Simulation of Photon Travel 0:00:11.416213
-    # Total Time Elapsed:         0:00:11.660041
 #############################
 
 # Installs Needed 

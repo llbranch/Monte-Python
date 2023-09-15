@@ -17,10 +17,11 @@ from memory_profiler import profile, LogFile #memory checks
 from multiprocessing import Pool, cpu_count, freeze_support
 # from concurrent.futures import ProcessPoolExecutor
 
-import cProfile
+# Native
+import cProfile # tuna 
 import pstats
 import sys
-import matplotlib
+
 
 # Module Pull
 from modTof import *
@@ -28,7 +29,7 @@ from modTof import *
 
 #######################################  P O O L #############################################################################
 """Run simulation with default 1 particle or arg[0] as number of particles and a time seperation of 'delta_t'=1e-5"""
-fp = open("memory_profiler.log", "w+")
+fp = open("memory_profiler_test.log", "w+")
 @profile(precision=4, stream=fp)
 # @profile(precision =4)
 def run(simClass, *arg, **kwargs):
@@ -72,7 +73,7 @@ def run(simClass, *arg, **kwargs):
     N = np.sum(photons)
     print("Photons generated", N)
     times = np.asarray(times); points = np.asarray(points); photons = np.asarray(photons); particleID = np.asarray(particleID)
-
+    del(N)
     # print(f'SIZE OF TIMES, POINTS, ETC: ', sys.getsizeof(times))
     # print('Time to unpack times,points, etc.', end)
 
@@ -208,8 +209,8 @@ def run(simClass, *arg, **kwargs):
     simClass.output_times_channelT1 = np.array(output_times_channelT1)
     simClass.output_times_channelT4 = np.array(output_times_channelT4)
 
-# Output function
-# def to_csv(simClass, **kwargs):
+    # Output function
+    # def to_csv(simClass, **kwargs):
     from scipy.stats import norm # type: ignore 
     output_extra = kwargs.get('extra_data_only', False)
     output_both = kwargs.get('output_both', False)
@@ -289,40 +290,20 @@ def run(simClass, *arg, **kwargs):
 if __name__ == '__main__':
 
     with cProfile.Profile() as profile:
-        ##########################################
-        # DECLARE SIMULATION AND PLOTTER CLASSES
-        ##########################################
+
         sim = Simulation()
-        # plot = plotter(sim)
 
-        #####################
-        # RUN SIMULATION 
-        #####################
         sim.max_simulated_reflections = 8
-        # sim.mean_free_path_scints = 0.00024 # cm -> 2.4 micrometers
-        # sim.num_particles = 4000
+
         run(sim,1)
-        # sim.to_csv(output_both=True)
 
-        ###############################################################
-        # RUN LTSPICE AND CALCULATE TIME OF FLIGHT --> SAVE TO FILE
-        ###############################################################
-        # sim.ltspice(filedate='07_12_2023',filenum=1)
-        # sim.calc_ToF(filedate='07_12_2023',filenum=1)
-        # sim.save_ToF()
-
-        #########################################
-        # LOAD CORRECTED MODEL AND PLOT EXTRA DATA
-        #########################################
-        # plot.load_extradata(filename='monte_carlo_extradata1chT1_07_12_2023.txt')
-        # plot.plot_xydistance_distr()
-        # plot.plot_distPMT_proptime()
-        # plot.load_ToF(1, filename='result_1_of_1_07_12_2023.txt')
-        # plot.correct_tof()
-        # sim.load_ToF(3858, filename='result_3858_of_4000_07_02_2023.txt')
-        # sim.plotToF()
     results = pstats.Stats(profile)
     results.sort_stats(pstats.SortKey.TIME)
     # results.print_stats()
     results.dump_stats("report_time.prof")
-    # sys.stdout = LogFile('memory_profile_log',reportIncrementFlag=False)
+    sys.stdout = LogFile('memory_profile_log',reportIncrementFlag=False)
+
+
+    # sim = Simulation()
+    # sim.max_simulated_reflections = 8
+    # run(sim,1)
