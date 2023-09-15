@@ -10,5 +10,6 @@
         "tqdm",
         "xlabel",
         "ylabel"
-    ]
+    ],
+    "terminal.integrated.env.linux": {}
 }
