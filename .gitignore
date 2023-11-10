@@ -6,3 +6,7 @@
 .vscode/c_cpp_properties.json
 .vscode/tasks.json
 .vscode/settings.json
+*.hdf5
+*.txt
+*.log
+Hummingbird_Run/

@@ -6,12 +6,13 @@
 #############################
 
 import numpy as np
+import h5py
 from pandas import DataFrame, read_csv, concat
 from tqdm import tqdm
 from random import uniform
-from time import perf_counter
+from time import time, perf_counter_ns
 from datetime import timedelta, datetime
-from multiprocessing import Pool, cpu_count, freeze_support
+from multiprocessing import Pool, cpu_count, freeze_support, Manager, Queue
 from memory_profiler import profile
 
 
@@ -359,26 +360,60 @@ class Simulation:
                                                 T4_z=self.T4z, T4_width=self.T4_width, T1_radius=self.T1_radius, T4_radius=self.T4_radius, T1_corner=[self.T4_radius,-self.T4_radius],
                                                 T4_corner=[self.T1_radius,-self.T1_radius], mean_free_path=self.mean_free_path_scints, 
                                                 photons_per_E=self.photons_produced_per_MeV, prob_scint=self.pr_of_scintillation)
-    def scint_taskT1(self, xpoint, ypoint, zpoint, time_i):
-        # READ A SMALL FILE WITH LITTLE MiB --> compressed file output
-        point_i = np.hstack((xpoint,ypoint,zpoint))
+    def scint_taskT1(self, point_i, time_i):
         return self.scintillator_monte_carlo(point_i, notabsorbed=True, scint_radius=self.T1_radius, 
                                                         scint_plane=np.array([self.T1z,self.T1top]),  
                                                         light_guide_planes=[self.T1_radius,-self.T1_radius], 
                                                         pmt_center=self.PMT1_center, pmt_radius=self.PMT1_radius, corner_center=self.T1_corner_center,
                                                         corner_radius=self.T1_corner_radius, N_max=self.max_simulated_reflections, t=time_i, keepdata=False)
-    def scint_taskT4(self, xpoint, ypoint, zpoint, time_i):
-        point_i = np.hstack((xpoint,ypoint,zpoint))
+    def scint_taskT4(self, point_i, time_i):
         return self.scintillator_monte_carlo(point_i, notabsorbed=True, scint_radius=self.T4_radius, 
                                                         scint_plane=np.array([self.T4z,self.T4top]),
                                                         light_guide_planes=[-self.T4_radius,+self.T4_radius], 
                                                         pmt_center=self.PMT4_center, pmt_radius=self.PMT4_radius, corner_center=self.T4_corner_center,
                                                         corner_radius=self.T4_corner_radius, N_max=self.max_simulated_reflections, t=time_i, keepdata=False)
    
-    
-    """Run simulation with default 1 particle or arg[0] as number of particles and a time seperation of 'delta_t'=1e-5"""
-    @profile(precision=4)
+    def run_worker_T1(self, i, q):
+        with h5py.File('temp.hdf5', 'r') as f:
+            data = f['T1']
+            hit, travel_time, prop_dist, endpt_dist, prop_time, interactions = self.scint_taskT1(data['points'][i], data['times'][i])
+            data['particleID'][i]
+            q.put([hit, travel_time, prop_dist, endpt_dist, prop_time, interactions, data['particleID'][i]])
+
+    def run_worker_T4(self, i, q):
+        with h5py.File('temp.hdf5', 'r') as f:
+            data = f['T4']
+            hit, travel_time, prop_dist, endpt_dist, prop_time, interactions = self.scint_taskT4(data['points'][i], data['times'][i])
+            data['particleID'][i]
+            q.put([hit, travel_time, prop_dist, endpt_dist, prop_time, interactions, data['particleID'][i]])
+
+    def listener(self, q, filename):
+        '''listens for messages on the q, writes to file. '''
+        f = h5py.File(f'{str(filename)}.hdf5', 'w')
+        not_created = True
+        while 1:
+            new_data = q.get()
+            if new_data == 'kill':
+                f['data'].resize((f['data'].attrs['n_photons']), axis=0)
+                f.close()
+                print("Queue", filename, "finished!")
+                break
+            if not_created:
+                ds = f.create_dataset('data', data=new_data, dtype='float64', compression="gzip", chunks=True, shape=(1,7), maxshape=(None,7))
+                ds.attrs['n_photons'] = 0
+                not_created = False
+            else:
+                if f['data'].attrs['n_photons'] == f['data'].shape[0]:
+                    # if out of space add 10 rows
+                    f['data'].resize((f['data'].shape[0] + 10), axis=0)
+                # add data regardless and increase counter
+                f['data'][f['data'].attrs['n_photons'],:] = new_data
+                f['data'].attrs['n_photons'] += 1
+
+
+    # @profile(precision=4)
     def run(self, *arg, **kwargs):
+        """Run simulation with default 1 particle or arg[0] as number of particles and a time seperation of 'delta_t'=1e-5"""
         import gc
         freeze_support()
         if arg:
@@ -388,14 +423,14 @@ class Simulation:
             self.num_particles = 1
             print(f"Generating {self.num_particles} particle now...")
         self.seperation_time = kwargs.get('delta_t', self.seperation_time) # in ps
-        logstarttime = perf_counter()
+        logstarttime = perf_counter_ns()
         # FIND PARTICLE PATH
         times = []
         points = []
         photons = []
         particleID = []
         i = 0
-        with Pool(processes=cpu_count()-1) as pool:
+        with Pool(processes=cpu_count()) as pool:
             res = pool.map(self.particle_task, range(self.num_particles))
             for (time_i, point_i, photon_i) in res:
                 i = 0
@@ -404,116 +439,109 @@ class Simulation:
                 photons.extend(photon_i)
                 particleID.extend(np.repeat(i, len(time_i))) # particle it belongs to
                 i += 1
-        logendparticle = perf_counter()
+        logendparticle = perf_counter_ns()
         N = np.sum(photons)
         print("Photons generated", N)
         times = np.asarray(times); points = np.asarray(points); photons = np.asarray(photons); particleID = np.asarray(particleID)
-        # RETURNS A FILE
-        # SPLIT HERE
-        # RUN #2
-        
-
-        # SIMULATE EACH PHOTON PATH IN BOTH SCINTILLATORS
-        # Gather TOF data
-        T1_input_times = []
-        T4_input_times = []
-        # Gather Extra Data for analysis
-        self.T1_prop_dist = []
-        self.T4_prop_dist = []
-        self.T1_endpoint_dist = []
-        self.T4_endpoint_dist = []
-        self.T1_prop_times = []
-        self.T4_prop_times = []
-        self.T1_interactions = []
-        self.T4_interactions = []
-        self.T1_part_ids = []
-        self.T4_part_ids = []
-        T1points = (points[:])[points[:,2] >= self.T1z]
-        T1times = (times[:])[points[:,2] >= self.T1z]
-        T1photons = (photons[:])[points[:,2] >= self.T1z]
-        T1part_ids = (particleID[:])[points[:,2] >= self.T1z]
-        T1part_ids = np.repeat(T1part_ids, T1photons.astype(int), axis=0) # big id bank
-        T4points = (points[:])[points[:,2] < self.T1z]
-        T4times = (times[:])[points[:,2] < self.T1z]
-        T4photons = (photons[:])[points[:,2] < self.T1z]
-        T4part_ids = (particleID[:])[points[:,2] < self.T1z]
-        T4part_ids = np.repeat(T4part_ids, T4photons.astype(int), axis=0) # big id bank
-        print(f"Photons in T1: {np.sum(T1photons)} and Photons in T4: {np.sum(T4photons)}")
-        del times; del points; del photons; # remove copies
+        T1_count = np.sum(photons[points[:,2] >= self.T1z]).astype(int)
+        T4_count = np.sum(photons[points[:,2] < self.T1z]).astype(int)
+        with h5py.File('temp.hdf5', 'w') as f:
+            print(f"Photons in T1: {T1_count} and Photons in T4: {T4_count}")
+            t1 = f.create_group("T1")
+            t1.create_dataset("times", data=np.repeat(times[points[:,2] >= self.T1z], photons[points[:,2] >= self.T1z].astype(int), axis=0), dtype=np.float64)
+            t1.create_dataset("points", data=np.repeat(points[points[:,2] >= self.T1z], photons[points[:,2] >= self.T1z].astype(int), axis=0), dtype=np.float64)
+            t1.create_dataset("particleID", data=np.repeat(particleID[points[:,2] >= self.T1z], photons[points[:,2] >= self.T1z].astype(int), axis=0), dtype=np.float64)
+            t4 = f.create_group("T4")
+            t4.create_dataset("times", data=np.repeat(times[points[:,2] < self.T1z],photons[points[:,2] < self.T1z].astype(int), axis=0), dtype=np.float64)
+            t4.create_dataset("points", data=np.repeat(points[points[:,2] < self.T1z],photons[points[:,2] < self.T1z].astype(int), axis=0), dtype=np.float64)
+            t4.create_dataset("particleID", data=np.repeat(particleID[points[:,2] < self.T1z],photons[points[:,2] < self.T1z].astype(int), axis=0), dtype=np.float64)
+        T1_total = len(times[points[:,2] >= self.T1z]) * T1_count
+        T4_total = len(times[points[:,2] < self.T1z]) * T4_count
+        del times; del points; del photons; del particleID
         gc.collect()
-        logstartphoton = perf_counter()
+        logstartphoton = perf_counter_ns()
+        
+        # New write and collect executor
+        manager = Manager()
+        q1 = manager.Queue()
+        q4 = manager.Queue()
+        with Pool(processes=cpu_count() + 2) as pool:
+            #put listeners to work first
+            print("Created file t1_data.hdf5 with size", T1_total)
+            watcher_t1 = pool.apply_async(self.listener, (q1, 't1_data'))
+            print("Created file t4_data.hdf5 with size", T4_total)
+            watcher_t4 = pool.apply_async(self.listener, (q4, 't4_data'))
 
-        # check this link https://stackoverflow.com/questions/14749897/python-multiprocessing-memory-usage
-        with Pool(processes=cpu_count()) as pool: # this way of making the pool causes all the data to copy! 
+            #fire off workers
+            jobs = []
             print("T1 Photon Propagation working...")
-            T1res = pool.starmap(self.scint_taskT1, np.repeat(np.c_[T1points,T1times],T1photons.astype(int), axis=0))
-            print("Done!")
+            for i in range(T1_count-1):
+                job = pool.apply_async(self.run_worker_T1, (i,q1))
+                jobs.append(job)
+
             print("T4 Photon Propagation working...")
-            T4res = pool.starmap(self.scint_taskT4, np.repeat(np.c_[T4points,T4times],T4photons.astype(int), axis=0))
+            for i in range(T4_count-1):
+                job = pool.apply_async(self.run_worker_T4, (i,q4))
+                jobs.append(job)
+            
+            # collect once they are done
+            for j in tqdm(jobs):
+                j.get()
+
             print("Done!")
-            print("Unzipping reuslts into arrays...")
-            for (T1hit_PMT, T1travel_time, T1tot_dist, T1endpt, T1bounces, T1prop),T1part_id in zip(T1res, T1part_ids): # check if moving starmap here helps
-                if T1hit_PMT:
-                    T1_input_times.append(T1travel_time)
-                    self.T1_prop_dist.append(T1tot_dist)
-                    self.T1_endpoint_dist.append(T1endpt)
-                    self.T1_prop_times.append(T1prop)
-                    self.T1_interactions.append(T1bounces)
-                    self.T1_part_ids.append(T1part_id)
-            for (T4hit_PMT, T4travel_time, T4tot_dist, T4endpt, T4bounces, T4prop),T4part_id in zip(T4res, T4part_ids): # check if moving starmap here helps
-                if T4hit_PMT:
-                    T4_input_times.append(T4travel_time)
-                    self.T4_prop_dist.append(T4tot_dist)
-                    self.T4_endpoint_dist.append(T4endpt)
-                    self.T4_prop_times.append(T4prop)
-                    self.T4_interactions.append(T4bounces)
-                    self.T4_part_ids.append(T4part_id)
-        logendtime = perf_counter()
+
+            # once collected kill the queues
+            q1.put('kill')
+            q4.put('kill')
+
+            watcher_t1.get()
+            watcher_t4.get()
+
+        logendtime = perf_counter_ns()
+        # LOAD RESULTS
+        f_t1 = h5py.File('t1_data.hdf5', 'r')
+        f_t4 = h5py.File('t4_data.hdf5', 'r')
+        
         # PRINT RESULTS
         print("TIME ANALYSIS:")
-        pgtime = timedelta(seconds=logendparticle-logstarttime)
-        phtime = timedelta(seconds=logendtime-logstartphoton)
-        ttime = timedelta(seconds=logendtime-logstarttime)
+        pgtime = timedelta(seconds=(logendparticle-logstarttime)/1e9)
+        phtime = timedelta(seconds=(logendtime-logstartphoton)/1e9)
+        ttime = timedelta(seconds=(logendtime-logstarttime)/1e9)
         print(f"Generation of Particles     {str(pgtime)}")
         print(f"Simulation of Photon Travel {str(phtime)}")
         print(f"Total Time Elapsed:         {str(ttime)}")
         print("RESULTS SUMMARY:")
-        print("HITS on T1",len(T1_input_times))
-        print("RATIO T1   total photons", np.sum(T1photons), "total incident photons", len(T1_input_times), f"ratio={np.sum(T1photons)/len(T1_input_times):.2f}")
-        print("HITS on T4",len(T4_input_times))
-        print("RATIO T4   total photons ", np.sum(T4photons),"total incident photons", len(T4_input_times), f"ratio={np.sum(T4photons)/len(T4_input_times):.2f}")
-        print("DISTANCE: ")
-        del T1points; del T1times; del T1photons; del T4points; del T4times; del T4photons; # remove unused variables
-        gc.collect()
-        # print(T4_input_times)
+        print("HITS on T1", np.sum(f_t1['data'][:,0]))
+        if np.sum(f_t1['data'][:,0]) > 0:
+            print("RATIO T1   total photons", T1_count, "total incident photons", np.sum(f_t1['data'][:,0]), f"ratio={T1_count/np.sum(f_t1['data'][:,0]):.2f}")
+        print("HITS on T4", np.sum(f_t4['data'][:,0]))
+        if np.sum(f_t4['data'][:,0]) > 0:
+            print("RATIO T4   total photons ", T4_count,"total incident photons", np.sum(f_t4['data'][:,0]), f"ratio={T1_count/np.sum(f_t4['data'][:,0]):.2f}")
         # BEGIN SIMULATING PMT PULSE
         signals_channelT1 = []
         signals_channelT4 = []
         output_times_channelT1 = []
         output_times_channelT4 = []
         signals = []
-        output_times = []
-        for t in T1_input_times:
+        for t in f_t1['data'][(f_t1['data'][:,0] == 1)][:,1]:
             pmtSignal_i = self.photontoElectrons(1)
-            output_times.append(self.pmt_electron_travel_time+t)
             output_times_channelT1.append(self.pmt_electron_travel_time+t)
             signals.append(pmtSignal_i)
             signals_channelT1.append(pmtSignal_i)
-        for t in T4_input_times:
+        for t in f_t4['data'][(f_t4['data'][:,0] == 1)][:,1]:
             pmtSignal_i = self.photontoElectrons(1)
-            output_times.append(self.pmt_electron_travel_time+t)
             output_times_channelT4.append(self.pmt_electron_travel_time+t)
             signals.append(pmtSignal_i)
             signals_channelT4.append(pmtSignal_i)
 
         # CONVERTION Electron count to Current and save in array
         self.signals = np.array(signals) * self.q / 1e-12 * self.artificial_gain # divided by 1ps 
-        self.output_times = np.array(output_times)
         self.signals_channelT1 = np.array(signals_channelT1) * self.q / 1e-12 * self.artificial_gain
         self.signals_channelT4 = np.array(signals_channelT4) * self.q / 1e-12 * self.artificial_gain * 0.6 # factor to limit pulses to 50miliamps and stop contant comparator firing. however, current should be smaller from Quantum Efficiency and current should be larger from 3kV potential difference across PMT dynodes instead of current 1kV potential difference
         self.output_times_channelT1 = np.array(output_times_channelT1)
         self.output_times_channelT4 = np.array(output_times_channelT4)
-    
+        print(self.output_times_channelT1)
+        print(self.output_times_channelT4)
     # Output function
     def to_csv(self, **kwargs):
         from scipy.stats import norm
@@ -521,11 +549,27 @@ class Simulation:
         output_both = kwargs.get('output_both', False)
         # OUTPUT FORMATTING
         if output_extra or output_both:
+            # data index lookup:
+            # 0  ,     1      ,    2      ,    3      ,    4    ,      5     ,     6                  
+            # hit, travel_time, prop_dist, endpt_dist, prop_time, interactions, particleID
+            file_t1 = h5py.File('t1_data.hdf5', 'r')['data']
+            file_t4 = h5py.File('t4_data.hdf5', 'r')['data']
+            f_t1 = np.array([data for data in file_t1 if data[0]])
+            f_t4 = np.array([data for data in file_t4 if data[0]])
+            # print(f_t1.shape, f_t4.shape)
+            # print(self.output_times_channelT1.shape, self.output_times_channelT4.shape)
+            
             print("Exporting Extra Data...")
-            dft1 = DataFrame({'T1_part_ids':self.T1_part_ids,'time':self.output_times_channelT1,'T1_prop_dist':self.T1_prop_dist,'T1_endpoint_dist':self.T1_endpoint_dist, 'T1_prop_times':self.T1_prop_times, 'T1_interactions':self.T1_interactions})
-            dft4 = DataFrame({'T4_part_ids':self.T4_part_ids,'time':self.output_times_channelT4,'T4_prop_dist':self.T4_prop_dist,'T4_endpoint_dist':self.T4_endpoint_dist, 'T4_prop_times':self.T4_prop_times, 'T4_interactions':self.T4_interactions})
-            dft1.to_csv('monte_carlo_extradata'+str(self.num_particles)+'chT1_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt') # default sep=','
-            dft4.to_csv('monte_carlo_extradata'+str(self.num_particles)+'chT4_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt') # default sep=','
+            if f_t1.shape[0] > 0:
+                dft1 = DataFrame({'T1_part_ids':f_t1[:,6],'time':f_t1[:,1],'T1_prop_dist':f_t1[:,2],'T1_endpoint_dist':f_t1[:,3], 'T1_prop_times':f_t1[:,4], 'T1_interactions':f_t1[:,5]})
+                dft1.to_csv('monte_carlo_extradata'+str(self.num_particles)+'chT1_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt') # default sep=','
+            else:
+                print("WARN: Not enough PMT hits in T1! (< 1)")
+            if f_t4.shape[0] > 0:
+                dft4 = DataFrame({'T4_part_ids':f_t4[:,6],'time':f_t4[:,1],'T4_prop_dist':f_t4[:,2],'T4_endpoint_dist':f_t4[:,3], 'T4_prop_times':f_t4[:,4], 'T4_interactions':f_t4[:,5]})
+                dft4.to_csv('monte_carlo_extradata'+str(self.num_particles)+'chT4_'+str(datetime.now().strftime('%m_%d_%Y'))+'.txt') # default sep=','
+            else:
+                print("WARN: Not enough PMT hits in T4! (< 1)")
             if not output_both:
                 return
         print("Exporing to 2 channels...")
@@ -1237,16 +1281,17 @@ if __name__ == '__main__':
     # DECLARE SIMULATION AND PLOTTER CLASSES
     ##########################################
     sim = Simulation()
-    plot = plotter(sim)
+    # plot = plotter(sim)
 
     #####################
     # RUN SIMULATION 
     #####################
     sim.max_simulated_reflections = 8
+    sim.mean_free_path_scints = 0.001
     # sim.mean_free_path_scints = 0.00024 # cm -> 2.4 micrometers
     # sim.num_particles = 4000
     sim.run(1)
-    # sim.to_csv(output_both=True)
+    sim.to_csv(output_both=True)
 
     ###############################################################
     # RUN LTSPICE AND CALCULATE TIME OF FLIGHT --> SAVE TO FILE

@@ -3,3 +3,5 @@ ERROR:PyLTSpice.LTSpiceSimulator:Unable to find a LTSpice executable.
 ERROR:PyLTSpice.LTSpiceSimulator:A specific location of the LTSPICE can be set
 ERROR:PyLTSpice.LTSpiceSimulator:using the create_from(<location>) class method
 ERROR:PyLTSpice.LTSpiceSimulator:==============================================
+INFO:sim1:Simulation Successful. Time elapsed: 00:00:00
+INFO:sim2:Simulation Successful. Time elapsed: 00:00:00
