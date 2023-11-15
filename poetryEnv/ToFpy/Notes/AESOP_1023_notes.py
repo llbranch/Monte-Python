@@ -63,65 +63,76 @@ from concurrent.futures import ProcessPoolExecutor
 
 # Class Simulation: self.function()/self.variable() called within itself
 ### No self calls 
-#   init(self) : constants 
-#   round_to_sig(self,float) : int 
-#   normalize(self, float): float
-#   lg_condition(self, x1, x2, x3): y
-#   distance_circle(self,x1,x2,x3,x4,x5): ?
-#   distance_plane(self, x1,x2,x3,x4): ?
+#   init(self) : constants -
+#   round_to_sig(self,float) : int -
+#   normalize(self, float): float-
+#   lg_condition(self, x1, x2, x3): y-
+#   distance_circle(self,x1,x2,x3,x4,x5): ?-
+#   distance_plane(self, x1,x2,x3,x4): ?-
 
 ### Calls self Constants ONLY
-#   scint_condition(self, x1,x2,x3): y
-#   photontoElectrons(self, x): float ? 
+#   scint_condition(self, x1,x2,x3): y-
+#   photontoElectrons(self, x): float ? -
 
 ### Calls self.other_functions
-#   distance_solver(self, x1,x2,x3,x4,x5,x6,x7,x8,x9): ?,Bool
-#   - distance_circle(self,x1,x2,x3,x4,x5): ?
-#   - distance_plane(self, x1,x2,x3,x4): ?
+#   distance_solver(self, x1,x2,x3,x4,x5,x6,x7,x8,x9): ?,Bool-
+#   - distance_circle(self,x1,x2,x3,x4,x5): ?-
+#   - distance_plane(self, x1,x2,x3,x4): ?-
 
-#   photon_interaction(self, x1,x2): ?,Bool
-#   - normalize(self, float): float
-#   - self.constants 
+#   photon_interaction(self, x1,x2): ?,Bool-
+#   - normalize(self, float): float-
+#   - self.constants -
 
 #   n_vec_calculate(self, x1,x2,x3,x4,x5): array ? 
-#   - normalize(self, float): float
+#   - normalize(self, float): float-
 
-#   particle_path(self, x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x12,x13): array ? 
-#   - round_to_sig(self,float) : int 
-#   - self.constants 
-#   - scint_condition(self, x1,x2,x3): y
-#   - lg_condition(self, x1, x2, x3): y
+#   particle_path(self, x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x12,x13): array ?- 
+#   - round_to_sig(self,float) : int -
+#   - self.constants -
+#   - scint_condition(self, x1,x2,x3): y-
+#   - lg_condition(self, x1, x2, x3): y-
 
-#   scintillator_monte_carlo(self,x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x12 ): bool, constants ... 
-#   - distance_solver(self, x1,x2,x3,x4,x5,x6,x7,x8,x9): ?,Bool
-#   - n_vec_calculate(self, x1,x2,x3,x4,x5): array ? 
-#   - photon_interaction(self, x1,x2): ?,Bool
 
-#   particle_task(self, x1,x2,x3): void 
+#   scintillator_monte_carlo(self,x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x12 ): bool, constants ... -
+#   - distance_solver(self, x1,x2,x3,x4,x5,x6,x7,x8,x9): ?,Bool-
+#   - n_vec_calculate(self, x1,x2,x3,x4,x5): array ? -
+#   - photon_interaction(self, x1,x2): ?,Bool-
+
+#   particle_task(self, x1,x2,x3): void --> (self, multi)
 #   - particle_path(self, x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x12,x13): array ? 
 
-#   scint_taskT1(self, x1,x2,x3,x4): bool, constants... 
+#   scint_taskT1(self, x1,x2,x3,x4): bool, constants... --> (self, point_i, time_i)
 #   - scintillator_monte_carlo(self,x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x12 ): bool, constants ... 
 
-#   scint_taskT4(self, x1,x2,x3,x4): bool, constants... 
+#   scint_taskT4(self, x1,x2,x3,x4): bool, constants... --> (self, point_i, time_i)
 #   - scintillator_monte_carlo(self,x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x12 ): bool, constants ... 
+
+#   run_worker_T1(self, i,q): ?
+#   - scint_taskT1(self, x1,x2,x3,x4)
+
+#   run_worker_T4(self, i,q): ?
+#   - scint_taskT4(self, x1,x2,x3,x4)
+
+#   listener(self, q, filename): 
+#   - h5py commands
 
 #   Pool  ###################################################
-#   run(self, x1*,x2*): void 
+#   run(self, x1*,x2*): void --> (self, *arg, **kwargs)
 #   - self.constants 
-#   - particle_task(self, x1,x2,x3): void 
-#   - scint_taskT1(self, x1,x2,x3,x4): bool, constants... 
-#   - scint_taskT4(self, x1,x2,x3,x4): bool, constants... 
+#   - particle_task(self, x1,x2,x3): void --> (self, multi)
+#   - listener(self, q, filename): 
+#   - run_worker_T1(self, i,q): ?
+#   - run_worker_T4(self, i,q): ?
 #   - photontoElectrons(self, x): float ? 
 # ###########################################################
 
 # Plotting and other functions without other function calls 
 
+#   to_csv(self, *kwargs): cases 2(?, void)
 #   time_at_thresh(self, x1,x2,x3,x4,x5): array ? 
 #   ToF_finalize(self, x1,x2,x3): void
 #   ltspice(self, x1,x2,x3): void 
 #   calc_ToF(self, x1,x2): void
 #   save_ToF(self, x1): void 
-#   to_csv(self, x1*): cases 2(?, void)
 
 # ------------------ end of 1st class -----------------

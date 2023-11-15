@@ -22,6 +22,7 @@ class Simulation:
         #############################
         # CONSTANTS
         #############################
+        # Scint
         self.c = 0.0299792/1.58 # Speed of Light in cm / ps
         self.q = 1.60217663e-19 # charge of electron columbs
         # CONSTRAINT n_1 <= n_2
@@ -49,6 +50,16 @@ class Simulation:
         self.yPMT1=8.*np.sin(np.radians(-45))*2.54 # y2PMT1=8.*np.sin(np.radians(-53.72))*2.54 For test
         self.PMT1_radius = 4.6/2 #cm need to change this to 46 milimeters or 0.046 cm
         self.PMT4_radius = 4.6/2 #cm 
+        self.particle_init_angle_range = 40 #degrees
+        self.particle_gen_area = self.T1_radius
+        self.particle_gen_z = self.T1z+self.T1_width + 2 #cm
+        self.mean_free_path_scints = 24e-5 #cm or 80 micro meters
+        self.pr_of_scintillation = 0.8
+        self.max_simulated_reflections = 40
+        self.pr_absorption = 0.1 # probability of boundary absorbing
+        self.num_particles = 1 # default Muons
+        self.reemission_angle_factor = 0.9 # range [0,1] --> cone from [-pi,pi]
+ 
         # PMT SIGNAL GENERATION FIELDS 
         self.n_dynodes = 8
         self.V = np.linspace(150,850,self.n_dynodes)
@@ -57,22 +68,13 @@ class Simulation:
         self.QE = 1 #0.23
         self.sigma_smoothing = 400 #ps
         self.t_initial = 0 #ps
-        self.particle_init_angle_range = 40 #degrees
-        self.particle_gen_area = self.T1_radius
-        self.particle_gen_z = self.T1z+self.T1_width + 2 #cm
-        self.mean_free_path_scints = 24e-5 #cm or 80 micro meters
         self.photons_produced_per_MeV = 10 # true value is closer to 10000 per 1MeV
-        self.pr_of_scintillation = 0.8
-        self.max_simulated_reflections = 40
         self.pmt_electron_travel_time = 0 # approx 16 ns
         self.artificial_gain = 1 # gain factor
         self.max_pmt_current_output = 80e-3 # mA
-        self.pr_absorption = 0.1 # probability of boundary absorbing
         self.seperation_time = 1e5 # ps 
         self.output_bin_width = 100 # ps
-        self.num_particles = 1 # default Muons
         self.CMOS_thresh = 1.5 # V for rising edge detector
-        self.reemission_angle_factor = 0.9 # range [0,1] --> cone from [-pi,pi]
         
         # Introduction Print Statement
         print("######################################################")
@@ -109,7 +111,7 @@ class Simulation:
         return ret
 
     # SCINT RADIUS CONDITION
-    def scint_condition(self, corner_pt, scint_radius, scint_num):
+    def scint_condition(self, corner_pt, scint_num): # variable not accessed 
         ret = np.sqrt(np.sum(corner_pt[0:2]**2)) < self.T1_radius
         if scint_num == 4:
             ret = np.sqrt(np.sum(corner_pt[0:2]**2)) < self.T4_radius
@@ -209,7 +211,7 @@ class Simulation:
             return self.normalize(u_r), True                        # new small change in direction (should be random), and not absorbed is True
 
     # Calculate n vector for all planes and surfaces in apparatus
-    def n_vec_calculate(self, o, scint_plane, light_guide_planes, corner_center, corner_radius):
+    def n_vec_calculate(self, o, scint_plane, light_guide_planes, corner_center): # variable not accessed 
         if o[2] == scint_plane[0]:                                      # bottom of scint
             return np.array([0,0,+1])
         elif o[2] == scint_plane[1]:                                    # top of scint
