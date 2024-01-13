@@ -89,9 +89,10 @@ if __name__ == '__main__':
         #fire off workers
         # this is bound by the length of the data arrays
         for i in range(array_size):
-            job = pool.apply_async(worker, (pp_file, i, q))    
-            job.get()
-        
+            pool.apply_async(worker, (pp_file, i, q)).wait()
+            # job.get()
+
+        # print(dir(pool.apply_async(worker, (pp_file, i, q))))
         q.put('kill')
 
         print("it worked")
