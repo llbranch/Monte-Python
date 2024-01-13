@@ -1,4 +1,5 @@
 """Takes arguments for multiprocessing"""
+
 import multiprocessing
 
 def worker_function_v2(num): 
@@ -14,4 +15,4 @@ if __name__ == '__main__':
     
     # process_i.join() # include this line to reconnect jobs before proceeding to next line in the code
     
-    print(len(jobs))
+    print("This may print mid way if .join is not used: ", len(jobs))

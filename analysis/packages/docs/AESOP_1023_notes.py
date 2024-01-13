@@ -136,3 +136,12 @@ from concurrent.futures import ProcessPoolExecutor
 #   save_ToF(self, x1): void 
 
 # ------------------ end of 1st class -----------------
+
+
+# Data for saving 
+# propagation time
+# propagation dist
+# pmt dist prop time
+# end point dist
+# interaction 
+# extra times 

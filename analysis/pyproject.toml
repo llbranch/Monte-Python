@@ -21,11 +21,10 @@ tuna = "^0.5.11"
 psutil = "^5.9.5"
 ipympl = "^0.9.3"
 ipywidgets = "^8.1.1"
-# ipywidgets = "7.7.2"
-# pyqt5 = "=5.15.10"
 h5py = "^3.10.0"
 seaborn = "^0.13.0"
 statsmodels = "^0.14.0"
+objgraph = "^3.6.0"
 
 
 [build-system]
