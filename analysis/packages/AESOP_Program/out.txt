@@ -1,0 +1,96 @@
+######################################################
+Generated Apparatus Simulation with following defaults
+######################################################
+PARTICLE: Mean Free Path = 0.00024 cm
+PARTICLE: Time Seperation between sequential Particles if simulation more than 1 = 100000.0
+SCINT:    Probability of Scintillaton = 0.8
+PMT:      Quantum Efficiency is set to 1 by default to keep more pulses
+PMT:      Energy per Photoelectron is set to 20 by best estimation
+PMT:      Artificial Gain on Output Current = 1
+OUTPUT:   Binning Width for PWL output file = 100 ps
+
+Run with .run() function given optional arguments below
+integer n particles, 'delta_t' = 100000.0 ps particle time seperation
+Generating 1 particles now...
+Photons generated 1251.0
+Photons in T1: 422 and Photons in T4: 829
+Created file t1_data.hdf5 with size 21100
+Created file t4_data.hdf5 with size 84558
+T1 Photon Propagation working...
+T4 Photon Propagation working...
+Done!
+TIME ANALYSIS:
+Generation of Particles     0:00:00.032776
+Simulation of Photon Travel 0:00:06.038854
+Total Time Elapsed:         0:00:06.107253
+RESULTS SUMMARY:
+HITS on T1 0.0
+HITS on T4 0.0
+[]
+[]
+######################################################
+Generated Apparatus Simulation with following defaults
+######################################################
+PARTICLE: Mean Free Path = 0.00024 cm
+PARTICLE: Time Seperation between sequential Particles if simulation more than 1 = 100000.0
+SCINT:    Probability of Scintillaton = 0.8
+PMT:      Quantum Efficiency is set to 1 by default to keep more pulses
+PMT:      Energy per Photoelectron is set to 20 by best estimation
+PMT:      Artificial Gain on Output Current = 1
+OUTPUT:   Binning Width for PWL output file = 100 ps
+
+Run with .run() function given optional arguments below
+integer n particles, 'delta_t' = 100000.0 ps particle time seperation
+Generating 1 particles now...
+Photons generated 1209.0
+Photons in T1: 414 and Photons in T4: 795
+Created file t1_data.hdf5 with size 20286
+Created file t4_data.hdf5 with size 79500
+T1 Photon Propagation working...
+T4 Photon Propagation working...
+Done!
+TIME ANALYSIS:
+Generation of Particles     0:00:00.034451
+Simulation of Photon Travel 0:00:04.864709
+Total Time Elapsed:         0:00:04.929322
+RESULTS SUMMARY:
+HITS on T1 0.0
+HITS on T4 16.0
+RATIO T4   total photons  795 total incident photons 16.0 ratio=25.88
+[]
+[3714.41695295 3844.68678118 3774.17812571 3928.29321162 3913.90812649
+ 3989.87260691 3939.03618155 3848.58273008 3821.02360821 3845.52942403
+ 3832.3186661  3963.78471957 4005.4401476  3674.50016146 3803.27818331
+ 4060.85140948]
+######################################################
+Generated Apparatus Simulation with following defaults
+######################################################
+PARTICLE: Mean Free Path = 0.00024 cm
+PARTICLE: Time Seperation between sequential Particles if simulation more than 1 = 100000.0
+SCINT:    Probability of Scintillaton = 0.8
+PMT:      Quantum Efficiency is set to 1 by default to keep more pulses
+PMT:      Energy per Photoelectron is set to 20 by best estimation
+PMT:      Artificial Gain on Output Current = 1
+OUTPUT:   Binning Width for PWL output file = 100 ps
+
+Run with .run() function given optional arguments below
+integer n particles, 'delta_t' = 100000.0 ps particle time seperation
+Generating 1 particles now...
+Photons generated 1264.0
+Photons in T1: 481 and Photons in T4: 783
+Created file t1_data.hdf5 with size 24050
+Created file t4_data.hdf5 with size 79866
+T1 Photon Propagation working...
+T4 Photon Propagation working...
+Done!
+TIME ANALYSIS:
+Generation of Particles     0:00:00.032099
+Simulation of Photon Travel 0:00:04.981117
+Total Time Elapsed:         0:00:05.047355
+RESULTS SUMMARY:
+HITS on T1 1.0
+RATIO T1   total photons 481 total incident photons 1.0 ratio=481.00
+HITS on T4 3.0
+RATIO T4   total photons  783 total incident photons 3.0 ratio=160.33
+[1044.94950295]
+[4429.95546965 4314.81122723 4323.9332121 ]
