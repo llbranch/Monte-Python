@@ -46,8 +46,9 @@ import numpy as np #analysis
 #       - diag
 #       - log
 from pandas import DataFrame, read_csv, concat #analysis
-from tqdm import tqdm #progressbar
 import h5py
+from tqdm import tqdm #progressbar
+
 # Native 
 from random import uniform #generator 
 from time import time, perf_counter_ns #timing 
