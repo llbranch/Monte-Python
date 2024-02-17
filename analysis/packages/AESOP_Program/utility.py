@@ -36,6 +36,7 @@ from numpy import (
     quantile, 
     diag, 
     log, 
+    divide,
 )
 
 from numpy.linalg import (
