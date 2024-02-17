@@ -11,7 +11,7 @@ def create_pp(print_keys = False):
     - set print to True to view keys
     '''
 
-    in_file = 'particle_path_data.hdf5'
+    in_file = 'data/particle_path_data.hdf5'
 
     tof_data = []
     for i in range(12):

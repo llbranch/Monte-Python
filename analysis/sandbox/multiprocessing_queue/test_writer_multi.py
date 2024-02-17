@@ -11,16 +11,6 @@ from numpy import arange
 from sudo_particle_path import create_pp, array_size
 
 
-'''
-Questions to answer: 
-    1. How many workers? 
-    2. How many listeners? 
-    3. What are we using to verify the program is working? 
-
-Comments: 
-    1. Assuming we have a way to verify the work is - working, 
-       why not store in binary? 
-'''
      
     
             
@@ -28,6 +18,8 @@ def worker(in_file, item_array, q):
     '''
     io reading
         - read an item from a key in the file
+        - Rather than create a sudo function SCINT I'm using read 
+            to gather the parameters from the file 
     '''
     name = current_process().name
     # open an existing file to read 
@@ -40,7 +32,7 @@ def worker(in_file, item_array, q):
 
         # My version
         for key in f.keys(): 
-            q.put(f[key][item_array])
+            q.put(f[key][item_array], block=False)
             # q.put(f[key][()]) # prints the entire array
 
     # print(name)
@@ -56,7 +48,8 @@ def listener(out_file, q):
     count = 0
     with open(out_file, 'w') as f:
         while 1:
-            m = q.get()
+            m = q.get_nowait()
+            # m = q.get(block = False)
             # print(m)
             if m == 'kill':
                 f.write('killed')
@@ -70,16 +63,13 @@ def listener(out_file, q):
                 
 
 
-
-
-
 if __name__ == '__main__':
 
     print('Create sudo particle path data with data size: ', array_size)
     pp_file = create_pp(print_keys=True) # returns the name of the file
     # check_contents(pp_file)
-
-    q = Manager().Queue()
+    Manager = Manager()
+    q = Manager.Queue()
 
     with Pool(cpu_count() - 1) as pool: 
 
@@ -88,12 +78,20 @@ if __name__ == '__main__':
 
         #fire off workers
         # this is bound by the length of the data arrays
+        jobs = []
         for i in range(array_size):
-            pool.apply_async(worker, (pp_file, i, q)).wait()
-            # job.get()
+            job = pool.apply_async(worker, (pp_file, i, q))
+            jobs.append(job)
 
+
+        for j in jobs:
+            j.get()
+
+        pool.close()
+        pool.join()
         # print(dir(pool.apply_async(worker, (pp_file, i, q))))
         q.put('kill')
+
 
         print("it worked")
         print(f"Expected # of lines {array_size} x 12: ", array_size*12 )

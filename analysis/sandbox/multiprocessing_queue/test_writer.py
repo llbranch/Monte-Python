@@ -29,18 +29,21 @@ def listener(out_file, q):
                 f.write(str(m) + '\n')
             # f.flush()
 
+# callback function
+def custom_callback(result):
+	print(f'Got result')
 
 
 if __name__ == '__main__':
     print('Create sudo particle path data with data size: ', array_size)
-    pp_file = create_pp(print_keys=True) # returns the name of the file
+    pp_file = create_pp(print_keys=False) # returns the name of the file
 
     manager = Manager()
     q = manager.Queue()
     pool = Pool(cpu_count())
 
     #put listener to work first
-    watcher = pool.apply_async(listener, ('out1.txt', q))
+    watcher = pool.apply_async(listener, ('data/out_og.txt', q), callback=custom_callback)
 
     #fire off workers
     jobs = []
