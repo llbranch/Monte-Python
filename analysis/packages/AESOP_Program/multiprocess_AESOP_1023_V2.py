@@ -13,11 +13,13 @@ from tqdm import tqdm
 from random import uniform # why use np.random and random ? 
 from time import time, perf_counter_ns
 from datetime import timedelta, datetime
-from multiprocessing import Pool, cpu_count, freeze_support, Manager, Queue
-from memory_profiler import profile
+from multiprocessing import Pool, cpu_count, freeze_support, Manager, Queue, set_start_method
+from memory_profiler import profile, LogFile
+import sys
 
 
 class Simulation:
+    fp = open("memory_profiler.log", "w+")
     
     def __init__(self):
         #############################
@@ -164,6 +166,7 @@ class Simulation:
     # t = -D . ∆ ± √(D . ∆)^2 - |D|^2(|∆|^2 - R^2)
     #     over |D|^2
     # ARGUMENTS : # 3d directional vector, 3d point, center of scintillator, radius of scintillator, use corner circle boolean
+    # @profile(precision=4, stream=fp)
     def distance_circle(self, u, o, center, radius, quadrant=False):
         # Calculate the dot product of u and o
         cond = np.dot(u, o) < 0
@@ -180,18 +183,33 @@ class Simulation:
         DdotDelta = D[0]*bigDelta_x + D[1]*bigDelta_y
         # Calculate the discriminant
         discriminant = DdotDelta**2 - magDsq * (magDeltasq - radius**2)
+
         if discriminant < 0:
+            # Release memory for intermediate variables
+            D = None; bigDelta_x = None; bigDelta_y = None; magDsq = None;
+            magDeltasq = None; DdotDelta = None;
             return 100
+        
         sqrt_term = np.sqrt(discriminant) / magDsq
         b_term = -DdotDelta / magDsq
         rootA = b_term - sqrt_term
         rootB = b_term + sqrt_term
+
         if quadrant is not False:
+            # Release memory for intermediate variables
+            D = None; bigDelta_x = None; bigDelta_y = None; magDsq = None;
+            magDeltasq = None; DdotDelta = None;
             return abs(rootA) if abs(rootA) > abs(rootB) else abs(rootB)
+        
+        # Release memory for intermediate variables
+        D = None; bigDelta_x = None; bigDelta_y = None; magDsq = None;
+        magDeltasq = None; DdotDelta = None;
         return abs(rootA) if (rootA < 0) & cond else abs(rootB)
 
 
+
     # ARGUMENTS : 3d directional vector, 3d point, z positions of planes bottom and top, plane dimension number
+    # @profile(precision=4, stream=fp)
     def distance_plane(self, u, o, plane, dim):                                     
         if dim==2:
             d_plane = plane[0] if u[dim] < 0 else plane[1]                    # make sure direction matches location of plane 
@@ -201,6 +219,7 @@ class Simulation:
 
 
     # SOLVE FOR DISTANCE LOGIC FUNCTION
+    # @profile(precision=4, stream=fp)
     def distance_solver(self, u, o, center, radius, plane_z, corner_center, corner_radius, pmt_center, pmt_radius):
         dcircle = self.distance_circle(u,o,center,radius)                          # checks distance to circle boundary
         dplane_z = self.distance_plane(u,o,plane_z,dim=2)                          # checks distance to z boundary in general scint
@@ -217,6 +236,11 @@ class Simulation:
                                                                             # if close to z = zero and within PMT circle
             if (temp_o[2] < (plane_z[0]+0.01)) & (((temp_o[0]-pmt_center[0])**2+(temp_o[1]-pmt_center[1])**2) <= pmt_radius**2): 
                 PMT_cond = True
+                dcircle = None; dplane_z = None; dist = None; temp_o = None; dplanex = None; dplaney = None; dplanez = None; 
+                dcorner = None; 
+            
+            dcircle = None; dplane_z = None; dist = None; temp_o = None; dplanex = None; dplaney = None; dplanez = None; 
+            dcorner = None;
             return light_guide_dist, PMT_cond
         elif (pmt_center[0] < 0) & (temp_o[0] < 0) & (temp_o[1] > 0) & ((temp_o[0]**2+temp_o[1]**2) >= radius**2-1):
             dplanex = self.distance_plane(u,o,-radius,dim=0)                       # checks distance to -x boundary
@@ -228,8 +252,15 @@ class Simulation:
                                                                             # if close to z = zero and within PMT circle
             if (temp_o[2] < (plane_z[0]+0.01)) & (((temp_o[0]-pmt_center[0])**2+(temp_o[1]-pmt_center[1])**2) <= pmt_radius**2): 
                 PMT_cond = True
+                dcircle = None; dplane_z = None; dist = None; temp_o = None; dplanex = None; dplaney = None; dplanez = None; 
+                dcorner = None;
+            
+            dcircle = None; dplane_z = None; dist = None; temp_o = None; dplanex = None; dplaney = None; dplanez = None; 
+            dcorner = None;
             return light_guide_dist, PMT_cond
         else:
+            dcircle = None; dplane_z = None; temp_o = None; dplanex = None; dplaney = None; dplanez = None; 
+            dcorner = None;
             return dist, PMT_cond
 
     # PSEUDOCODE FOR EACH PHOTON INTERACTION WITH BOUNDARY
@@ -242,6 +273,7 @@ class Simulation:
             # absorbed by white paint and reemmitted back 
             # into scintillator with random direction given by random angles Phi_3, Theta_3
             # with constraint of z coordinate entering
+    # @profile(precision=4, stream=fp)    
     def photon_interaction(self, u, n):
         u_r = u - 2*np.dot(u, n)*n                              # u_new = u - 2 (u . n)*n
         v = u*-1 if np.dot(u,n) < 0 else u
@@ -251,16 +283,21 @@ class Simulation:
         Rs = np.abs((self.n_1*np.cos(theta) - self.n_2*sqrt_term)/(self.n_1*np.cos(theta) + self.n_2*sqrt_term))**2
         Rp = np.abs((self.n_1*sqrt_term - self.n_2*np.cos(theta))/(self.n_1*sqrt_term + self.n_2*np.cos(theta)))**2
                                                                 # Determine probability of reflectance
-        if np.random() < ((Rs+Rp)/2):                    # if random chance is high enough reflect !
+        if np.random() < ((Rs+Rp)/2): # if random chance is high enough reflect !
+            v = None; theta = None; inside_sqrt = None; sqrt_term = None; Rs = None; Rp = None;             
             return self.normalize(u_r), True                        # return full internal reflection and not absorbed is True
                                                                 # else photon is transmitted to white paint
         elif np.random() < self.pr_absorption:               # does it get absorbed? change probability when you get more data
+            v = None; theta = None; inside_sqrt = None; sqrt_term = None; Rs = None; Rp = None;
             return self.normalize(u_r), False                       # not absorbed is False
         else:                                                   # no it didn't get absorbed!
             theta_new = uniform(-np.pi/2,np.pi/2)            # new theta direction of photon
             phi_new = uniform(-np.pi, np.pi)                 # new phi   direction of photon
             new_u = self.normalize(np.array([np.sin(phi_new)*np.cos(theta_new),np.sin(phi_new)*np.sin(theta_new),np.cos(phi_new)]))
             u_r = self.reemission_angle_factor*new_u + n
+
+            v = None; theta = None; inside_sqrt = None; sqrt_term = None; Rs = None; Rp = None;
+            theta_new = None; phi_new = None;
             return self.normalize(u_r), True                        # new small change in direction (should be random), and not absorbed is True
 
     # Calculate n vector for all planes and surfaces in apparatus
@@ -282,6 +319,7 @@ class Simulation:
     unit_z = np.array([0, 0, 1])
     unit_neg_z = np.array([0, 0, -1])
     # Calculate n vector for all planes and surfaces in apparatus V2
+    # @profile(precision=4, stream=fp)
     def n_vec_calculate(self, o, scint_plane, light_guide_planes, corner_center, corner_radius=None):
         if o[2] == scint_plane[0]:                                      # bottom of scint
             return self.unit_z
@@ -311,7 +349,7 @@ class Simulation:
         #          if point is insde of scintillator_i
         #                Generate photons if random number X_1 < Pr(scintillate)
         #                walk mean free path length and store position if still within scintillator
-
+    # @profile(precision=4, stream=fp)
     def particle_path(self, t, phi_range_deg, T1_z, T1_width, T4_z, T4_width, T1_radius, T4_radius, T1_corner, T4_corner, mean_free_path, photons_per_E, prob_scint):
         theta = uniform(0,2*np.pi)                                                     # random theta in circle above T1
         phi = uniform(np.pi-phi_range_deg*np.pi/180/2,np.pi+phi_range_deg*np.pi/180/2) # phi angle pointing in -k given phi range
@@ -381,10 +419,13 @@ class Simulation:
                     cur_o = points[-1]                                             # current point 
                     next_o = (cur_o+mean_free_path*u).round(round_const)           # next point
                     inside_scint = (next_o[2] <= (Ttop)) & (next_o[2] >= Tbottom) & (self.scint_condition(next_o, Tradius, num) | self.lg_condition(next_o, Tcorner, num))
-        # write to file compressed arrays float 64s
-        return np.array(times, dtype=np.float64)[1:], np.array(points, dtype=np.float64)[1:], np.array(photons[1:], dtype=np.float64)
 
-    # @profile(precision=4)
+        theta = None; phi = None; maxdist = None; round_const = None; o = None; u = None; cur_o = None; next_o = None; inside_scint = None; missed = None; distT1 = None; distT4 = None; 
+        dist = None; check = None; inside_T1 = None; inside_T4 = None; scint_cond = None; t = None; phot = None; 
+        # write to file compressed arrays float 64s
+        return np.array(times, dtype=np.float64)[1:], np.array(points, dtype=np.float64)[1:], np.array(photons[1:], dtype=np.float64) # times,points,photons
+
+    # @profile(precision=4, stream=fp)
     def scintillator_monte_carlo(self, o, notabsorbed, scint_radius, scint_plane, light_guide_planes, pmt_center, pmt_radius, corner_center, corner_radius, N_max, t, keepdata):
         if keepdata: track_history = np.zeros((N_max+1,7))         # x, y history of Photon
         endpoint_dist = np.norm(o-pmt_center)
@@ -410,8 +451,12 @@ class Simulation:
         if keepdata:
             if (i < N_max):
                 track_history = track_history[:i+1,:]
+                endpoint_dist = None; theta = None; phi = None; total_dist = None; u = None; ds = None; x = None; y = None; z = None; 
+                o = None; n = None; notabsorbed = None; 
             return PMT_hit_condition, (t+dt), track_history
         else:
+            theta = None; phi = None; u = None; ds = None; x = None; y = None; z = None; 
+            o = None; n = None; notabsorbed = None; 
             return PMT_hit_condition, (t+dt), total_dist, endpoint_dist, i, dt
 
     # PMT SIMULATION
@@ -433,12 +478,14 @@ class Simulation:
                                                 T4_z=self.T4z, T4_width=self.T4_width, T1_radius=self.T1_radius, T4_radius=self.T4_radius, T1_corner=[self.T4_radius,-self.T4_radius],
                                                 T4_corner=[self.T1_radius,-self.T1_radius], mean_free_path=self.mean_free_path_scints, 
                                                 photons_per_E=self.photons_produced_per_MeV, prob_scint=self.pr_of_scintillation)
+    # @profile(precision=4, stream=fp)
     def scint_taskT1(self, point_i, time_i):
         return self.scintillator_monte_carlo(point_i, notabsorbed=True, scint_radius=self.T1_radius, 
                                                         scint_plane=np.array([self.T1z,self.T1top]),  
                                                         light_guide_planes=[self.T1_radius,-self.T1_radius], 
                                                         pmt_center=self.PMT1_center, pmt_radius=self.PMT1_radius, corner_center=self.T1_corner_center,
                                                         corner_radius=self.T1_corner_radius, N_max=self.max_simulated_reflections, t=time_i, keepdata=False)
+    # @profile(precision=4, stream=fp)
     def scint_taskT4(self, point_i, time_i):
         return self.scintillator_monte_carlo(point_i, notabsorbed=True, scint_radius=self.T4_radius, 
                                                         scint_plane=np.array([self.T4z,self.T4top]),
@@ -452,6 +499,7 @@ class Simulation:
     #         hit, travel_time, prop_dist, endpt_dist, prop_time, interactions = self.scint_taskT1(data['points'][i], data['times'][i])
     #         data['particleID'][i]
     #         q.put([hit, travel_time, prop_dist, endpt_dist, prop_time, interactions, data['particleID'][i]])
+    # @profile(precision=4, stream=fp)
     def run_worker_T1(self, i, q):
         with h5py.File('temp.hdf5', 'r') as f: # data is only created when called in scint 
             data = f['T1']
@@ -461,6 +509,7 @@ class Simulation:
         # Move the Q out of the scope of the file 
         hit, travel_time, prop_dist, endpt_dist, prop_time, interactions = self.scint_taskT1(point, time)
         q.put([hit, travel_time, prop_dist, endpt_dist, prop_time, interactions, particle_id])
+        hit = None; travel_time = None; prop_dist = None; endpt_dist = None; prop_time = None; interactions = None;
         
 
     # def run_worker_T4(self, i, q):
@@ -469,6 +518,7 @@ class Simulation:
     #         hit, travel_time, prop_dist, endpt_dist, prop_time, interactions = self.scint_taskT4(data['points'][i], data['times'][i])
     #         data['particleID'][i]
     #         q.put([hit, travel_time, prop_dist, endpt_dist, prop_time, interactions, data['particleID'][i]])
+    # @profile(precision=4, stream=fp)
     def run_worker_T4(self, i, q):
         with h5py.File('temp.hdf5', 'r') as f:
             data = f['T4']
@@ -478,6 +528,7 @@ class Simulation:
         # Move the Q out of the scope of the file 
         hit, travel_time, prop_dist, endpt_dist, prop_time, interactions = self.scint_taskT4(point, time)
         q.put([hit, travel_time, prop_dist, endpt_dist, prop_time, interactions, particle_id])
+        hit = None; travel_time = None; prop_dist = None; endpt_dist = None; prop_time = None; interactions = None;
 
     # def listener(self, q, filename):
     #     '''listens for messages on the q, writes to file. '''
@@ -502,7 +553,9 @@ class Simulation:
     #             f['data'][f['data'].attrs['n_photons'],:] = new_data
     #             f['data'].attrs['n_photons'] += 1
         
-    def listener(self, q, filename, chunk_size=200):
+
+    # @profile(precision=4, stream=fp)    
+    def listener(self, q, filename, chunk_size=4000):
         '''listens for messages on the q, writes to file. '''
         f = h5py.File(f'{str(filename)}.hdf5', 'w')
         not_created = True
@@ -542,7 +595,7 @@ class Simulation:
 
 
 
-    # @profile(precision=4)
+    # @profile(precision=4, stream=fp)
     def run(self, *arg, **kwargs):
         """Run simulation with default 1 particle or arg[0] as number of particles and a time seperation of 'delta_t'=1e-5"""
         import gc
@@ -1422,6 +1475,7 @@ if __name__ == '__main__':
     ##########################################
     # DECLARE SIMULATION AND PLOTTER CLASSES
     ##########################################
+    set_start_method('fork')
     sim = Simulation()
     plot = plotter(sim)
 
@@ -1434,7 +1488,7 @@ if __name__ == '__main__':
     # # sim.mean_free_path_scints = 0.00024 # cm -> 2.4 micrometers
     # # sim.num_particles = 4000
     sim.run(1)
-    sim.to_csv(output_both=True)
+    # sim.to_csv(output_both=True)
 
     ###############################################################
     # RUN LTSPICE AND CALCULATE TIME OF FLIGHT --> SAVE TO FILE
@@ -1446,10 +1500,15 @@ if __name__ == '__main__':
     #########################################
     # LOAD CORRECTED MODEL AND PLOT EXTRA DATA
     #########################################
-    plot.load_extradata(filename='monte_carlo_extradata1chT1_02_17_2024.txt')
-    plot.plot_xydistance_distr()
-    plot.plot_distPMT_proptime()
+    # plot.load_extradata(filename='monte_carlo_extradata1chT1_02_17_2024.txt')
+    # plot.plot_xydistance_distr()
+    # plot.plot_distPMT_proptime()
     # plot.load_ToF(1, filename='result_1_of_1_07_12_2023.txt')
     # plot.correct_tof()
     # sim.load_ToF(3858, filename='result_3858_of_4000_07_02_2023.txt')
     # sim.plotToF()
+
+    ###############################################################
+    # MEMORY LOG
+    ###############################################################
+    sys.stdout = LogFile('memory_profiler_log', reportIncrementFlag=False)

@@ -19,13 +19,22 @@ if __name__ == "__main__":
 ```
 Run the following in the command line 
 ```bash
-$ poetry run mprof run --multiprocess <file.py>
+# The following can be run on a python file WITHOUT decorators
+
+$ poetry run mprof run -M <file.py> # shows individual memory plots (forked processes)
 
 # or 
 
-$ poetry run mprof run --multiprocess --include-children <file.py>
+$ poetry run mprof run -M -C <file.py> # shows sum and individual (forked processes)
 
-$ poetry run mprof run plot --output=plot.png # this plots the data
+# and
+
+$ mprof plot -o plot.png # this plots the data
+
+# or
+
+# this plots the data & trend line <0 is a potential memory leak
+$ mprof plot -s -o plot.png 
 
 ```
 

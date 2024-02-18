@@ -1289,11 +1289,11 @@ if __name__ == '__main__':
     #####################
     # RUN SIMULATION 
     #####################
-    # sim.max_simulated_reflections = 8
-    # sim.mean_free_path_scints = 0.001
+    sim.max_simulated_reflections = 8
+    sim.mean_free_path_scints = 0.001
     # sim.mean_free_path_scints = 0.00024 # cm -> 2.4 micrometers
     # sim.num_particles = 4000
-    # sim.run(1)
+    sim.run(1)
     # sim.to_csv(output_both=True)
 
     ###############################################################
@@ -1306,9 +1306,9 @@ if __name__ == '__main__':
     #########################################
     # LOAD CORRECTED MODEL AND PLOT EXTRA DATA
     #########################################
-    plot.load_extradata(filename='monte_carlo_extradata1chT1_02_17_2024.txt')
-    plot.plot_xydistance_distr()
-    plot.plot_distPMT_proptime()
+    # plot.load_extradata(filename='monte_carlo_extradata1chT1_02_17_2024.txt')
+    # plot.plot_xydistance_distr()
+    # plot.plot_distPMT_proptime()
     # plot.load_ToF(1, filename='result_1_of_1_07_12_2023.txt')
     # plot.correct_tof()
     # sim.load_ToF(3858, filename='result_3858_of_4000_07_02_2023.txt')

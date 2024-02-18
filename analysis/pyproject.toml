@@ -30,6 +30,7 @@ h5py = "^3.10.0"
 seaborn = "^0.13.0"
 statsmodels = "^0.14.0"
 objgraph = "^3.6.0"
+PyQt5 = "=5.15.2"
 
 
 [build-system]
