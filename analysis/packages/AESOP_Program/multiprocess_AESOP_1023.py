@@ -963,6 +963,7 @@ class plotter:
             ax0[1].set_title(f'T4 Distance From Track to PMT vs. Propagation Time')#, outliers={np.count_nonzero(~limT4)}')
             ax0[1].legend(loc='upper right')
             ax0[1].grid()
+            plt.savefig('distPMT_fig1.png')
             plt.show()
         else:
             print("Need to run simulation first with sim.run()")
@@ -989,6 +990,7 @@ class plotter:
             ax0[1].set_title('T4 Propagation XY Distance Distribution')
             ax0[1].legend()
             ax0[1].grid()
+            plt.savefig('xydist_fig1.png')
             plt.show()
             fig1, ax1 = plt.subplots(1,2)
             fig1.set_size_inches(13,6)
@@ -1012,6 +1014,7 @@ class plotter:
             ax1[1].set_title('T4 Propagation Times vs. Interactions / Reflections')
             ax1[1].legend()
             ax1[1].grid()
+            plt.savefig('xydist_fig2.png')
             plt.show()
         else:
             print("Need to run simulation first with sim.run()")
@@ -1281,16 +1284,16 @@ if __name__ == '__main__':
     # DECLARE SIMULATION AND PLOTTER CLASSES
     ##########################################
     sim = Simulation()
-    # plot = plotter(sim)
+    plot = plotter(sim)
 
     #####################
     # RUN SIMULATION 
     #####################
-    sim.max_simulated_reflections = 8
-    sim.mean_free_path_scints = 0.01
+    # sim.max_simulated_reflections = 8
+    # sim.mean_free_path_scints = 0.001
     # sim.mean_free_path_scints = 0.00024 # cm -> 2.4 micrometers
     # sim.num_particles = 4000
-    sim.run(1)
+    # sim.run(1)
     # sim.to_csv(output_both=True)
 
     ###############################################################
@@ -1303,9 +1306,9 @@ if __name__ == '__main__':
     #########################################
     # LOAD CORRECTED MODEL AND PLOT EXTRA DATA
     #########################################
-    # plot.load_extradata(filename='monte_carlo_extradata4000chT1_07_11_2023.txt')
-    # plot.plot_xydistance_distr()
-    # plot.plot_distPMT_proptime()
+    plot.load_extradata(filename='monte_carlo_extradata1chT1_02_17_2024.txt')
+    plot.plot_xydistance_distr()
+    plot.plot_distPMT_proptime()
     # plot.load_ToF(1, filename='result_1_of_1_07_12_2023.txt')
     # plot.correct_tof()
     # sim.load_ToF(3858, filename='result_3858_of_4000_07_02_2023.txt')
