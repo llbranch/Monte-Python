@@ -11,10 +11,9 @@ import h5py
 from pandas import DataFrame, read_csv, concat
 from tqdm import tqdm
 from random import uniform
-from time import time, perf_counter_ns
+from time import perf_counter_ns
 from datetime import timedelta, datetime
-from multiprocessing import Pool, cpu_count, freeze_support, Manager, Queue
-from memory_profiler import profile
+from multiprocessing import Pool, cpu_count, freeze_support, Manager, set_start_method
 
 
 class Simulation:
@@ -527,7 +526,7 @@ class Simulation:
         photons = []
         particleID = []
         i = 0
-        with Pool(processes=cpu_count()) as pool:
+        with Pool(processes=cpu_count()-1) as pool:
             res = pool.map(self.particle_task, range(self.num_particles))
             for (time_i, point_i, photon_i) in res:
                 i = 0
@@ -562,7 +561,7 @@ class Simulation:
         manager = Manager()
         q1 = manager.Queue()
         q4 = manager.Queue()
-        with Pool(processes=cpu_count() + 2) as pool:
+        with Pool(processes=cpu_count() -1 ) as pool:
             #put listeners to work first
             print("Created file t1_data.hdf5 with size", T1_total)
             watcher_t1 = pool.apply_async(self.listener, (q1, 't1_data'))
@@ -570,23 +569,19 @@ class Simulation:
             watcher_t4 = pool.apply_async(self.listener, (q4, 't4_data'))
 
             #fire off workers
-            jobs_T1 = []
+            jobs = []
             print("T1 Photon Propagation working...")
             for i in range(T1_count-1):
                 job = pool.apply_async(self.run_worker_T1, (i,q1))
-                jobs_T1.append(job)
-            jobs_T4 = []
+                jobs.append(job)
+            
             print("T4 Photon Propagation working...")
             for i in range(T4_count-1):
                 job = pool.apply_async(self.run_worker_T4, (i,q4))
-                jobs_T4.append(job)
+                jobs.append(job)
             
-            # Collect results for T1
-            for j in tqdm(jobs_T1):
-                j.get()
-
-            # Collect results for T4
-            for j in tqdm(jobs_T4):
+            # Collect results
+            for j in tqdm(jobs):
                 j.get()
 
             print("Done!")
@@ -1381,6 +1376,7 @@ if __name__ == '__main__':
     ##########################################
     # DECLARE SIMULATION AND PLOTTER CLASSES
     ##########################################
+    set_start_method('fork')
     sim = Simulation()
     # plot = plotter(sim)
 
