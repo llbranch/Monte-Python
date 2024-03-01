@@ -99,22 +99,23 @@ class Simulation:
 
     # NORMALIZE A VECTOR
     def normalize(self, x):
-        x /= np.norm(x)
+        np.divide(x, np.norm(x), out = x) # removing temp array 
         return x
     
     # LIGHT GUIDE CONDITION
     def lg_condition(self, corner_pt, scint_corner, scint_num):
-        ret = (corner_pt[0] > 0) & (corner_pt[0] < scint_corner[0]) & (corner_pt[1] < 0) & (corner_pt[1] > scint_corner[1])
+        # removed temp variable ret
         if scint_num == 4:
-            ret = (corner_pt[0] > 0) & (corner_pt[0] < scint_corner[0]) & (corner_pt[1] < 0) & (corner_pt[1] > scint_corner[1])
-        return ret
+            return (corner_pt[0] > 0) & (corner_pt[0] < scint_corner[0]) & (corner_pt[1] < 0) & (corner_pt[1] > scint_corner[1])
+        return (corner_pt[0] > 0) & (corner_pt[0] < scint_corner[0]) & (corner_pt[1] < 0) & (corner_pt[1] > scint_corner[1])
 
     # SCINT RADIUS CONDITION
     def scint_condition(self, corner_pt, scint_radius, scint_num):
-        ret = np.sqrt(np.sum(corner_pt[0:2]**2)) < self.T1_radius
+        # reduced computation 
+        radius_sq = corner_pt[0]**2 + corner_pt[1]**2
         if scint_num == 4:
-            ret = np.sqrt(np.sum(corner_pt[0:2]**2)) < self.T4_radius
-        return ret
+            return np.sqrt(radius_sq) < self.T4_radius
+        return np.sqrt(radius_sq) < self.T1_radius
 
     # DISTANCE 2-DIM CIRCLE WITH LINE SEGMENT
     # t = -D . ∆ ± √(D . ∆)^2 - |D|^2(|∆|^2 - R^2)
