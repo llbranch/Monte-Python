@@ -8,7 +8,7 @@
 # import numpy as np
 import utility as np
 import h5py
-from pandas import DataFrame, read_csv, concat
+# from pandas import DataFrame, read_csv, concat
 from tqdm import tqdm
 from random import uniform
 from time import perf_counter_ns
@@ -1389,6 +1389,9 @@ if __name__ == '__main__':
     # sim.num_particles = 4000
     sim.run(1)
     # sim.to_csv(output_both=True)
+    print("hi! run this command to view memory w.o imports")
+    print("mprof run -M -C <file>")
+    print("mprof plot -s")
 
     ###############################################################
     # RUN LTSPICE AND CALCULATE TIME OF FLIGHT --> SAVE TO FILE
