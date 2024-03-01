@@ -122,20 +122,42 @@ class Simulation:
     #     over |D|^2
     # ARGUMENTS : # 3d directional vector, 3d point, center of scintillator, radius of scintillator, use corner circle boolean
     def distance_circle(self, u, o, center, radius, quadrant=False): 
+        # Calculate the dot prod. of u and o 
         cond = np.dot(u,o) < 0
-        D = u*-1 if cond else u # does a normalized vector in 3d equate to normalized vector in 2d?
-        bigDelta = np.array(o)-np.array(center)
-        magDsq = np.norm(D)**2
-        magDeltasq = np.norm(bigDelta)**2
-        DdotDelta = np.dot(D,bigDelta)
-        if DdotDelta**2 - magDsq * (magDeltasq - radius**2) < 0:
+        # Calculate the normalized direction vector D 
+        D = -u if cond else u # does a normalized vector in 3d equate to normalized vector in 2d?- the process is the same and it will collapse to 2d if the 3d vector has a zero as a component 
+        # Calculate the components of bigDelta, removed array creation 
+        bigDelta_x = o[0] - center[0]
+        bigDelta_y = o[1] - center[1]
+        # Calculate the squared mag of D aka the dot of D aka squared norm
+        magDsq = np.dot(D,D)
+        # Calculate the squared mag. of bigDelta
+        magDeltasq = bigDelta_x**2 + bigDelta_y**2
+        # Calculate the dot prod. of D and bigDelta
+        DdotDelta = D[0]*bigDelta_x + D[1]*bigDelta_y
+        # Calculate discriminant
+        discriminant = DdotDelta**2 - magDsq * (magDeltasq - radius**2)
+
+        if discriminant < 0:
+            # Release memory for intermediate variables
+            D = None; bigDelta_x = None; bigDelta_y = None; magDsq = None;
+            magDeltasq = None; DdotDelta = None;
             return 100 # some large value that won't be chosen because photon has no intersection with circle
-        sqrt_term = np.sqrt(DdotDelta**2 - magDsq * (magDeltasq - radius**2))/magDsq
+        
+        sqrt_term = np.sqrt(discriminant)/magDsq
         b_term = -DdotDelta/magDsq
         rootA = b_term - sqrt_term
         rootB = b_term + sqrt_term
+
         if quadrant is not False: # if in corner don't use the other 3/4ths of the circle to find distance only 2nd or 4th quadrant part
+            # Release memory for intermediate variables
+            D = None; bigDelta_x = None; bigDelta_y = None; magDsq = None;
+            magDeltasq = None; DdotDelta = None;
             return np.abs(rootA) if np.abs(rootA) > np.abs(rootB) else np.abs(rootB)
+        
+        # Release memory for intermediate variables
+        D = None; bigDelta_x = None; bigDelta_y = None; magDsq = None;
+        magDeltasq = None; DdotDelta = None;
         return np.abs(rootA) if (rootA < 0) & cond else np.abs(rootB)
 
     # ARGUMENTS : 3d directional vector, 3d point, z positions of planes bottom and top, plane dimension number
