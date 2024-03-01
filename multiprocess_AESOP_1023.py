@@ -383,8 +383,14 @@ class Simulation:
         if keepdata:
             if (i < N_max):
                 track_history = track_history[:i+1,:]
+            # release
+            endpoint_dist = None; theta = None; phi = None; total_dist = None; u = None; ds = None; x = None; y = None; z = None; 
+            o = None; n = None; notabsorbed = None;
             return PMT_hit_condition, (t+dt), track_history
         else:
+            # release
+            endpoint_dist = None; theta = None; phi = None; total_dist = None; u = None; ds = None; x = None; y = None; z = None; 
+            o = None; n = None; notabsorbed = None;
             return PMT_hit_condition, (t+dt), total_dist, endpoint_dist, i, dt
 
     # PMT SIMULATION
