@@ -15,3 +15,7 @@ Hummingbird_Run/
 __pycache__/
 *.py[cod]
 *$py.class
+
+# files 
+*.prof
+*.dat
