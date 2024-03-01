@@ -5,7 +5,8 @@
 # Copyright UCSC 2023
 #############################
 
-import numpy as np
+# import numpy as np
+import utility as np
 import h5py
 from pandas import DataFrame, read_csv, concat
 from tqdm import tqdm
@@ -98,7 +99,7 @@ class Simulation:
 
     # NORMALIZE A VECTOR
     def normalize(self, x):
-        x /= np.linalg.norm(x)
+        x /= np.norm(x)
         return x
     
     # LIGHT GUIDE CONDITION
@@ -123,8 +124,8 @@ class Simulation:
         cond = np.dot(u,o) < 0
         D = u*-1 if cond else u # does a normalized vector in 3d equate to normalized vector in 2d?
         bigDelta = np.array(o)-np.array(center)
-        magDsq = np.linalg.norm(D)**2
-        magDeltasq = np.linalg.norm(bigDelta)**2
+        magDsq = np.norm(D)**2
+        magDeltasq = np.norm(bigDelta)**2
         DdotDelta = np.dot(D,bigDelta)
         if DdotDelta**2 - magDsq * (magDeltasq - radius**2) < 0:
             return 100 # some large value that won't be chosen because photon has no intersection with circle
@@ -190,16 +191,16 @@ class Simulation:
     def photon_interaction(self, u, n):
         u_r = u - 2*np.dot(u, n)*n                              # u_new = u - 2 (u . n)*n
         v = u*-1 if np.dot(u,n) < 0 else u
-        theta = np.arcsin(np.linalg.norm(np.cross(v,n))/(np.linalg.norm(u)*np.linalg.norm(n)))
+        theta = np.arcsin(np.norm(np.cross(v,n))/(np.norm(u)*np.norm(n)))
         inside_sqrt = ((self.n_1/self.n_2)*np.sin(theta))**2
         sqrt_term = np.sqrt(1 - inside_sqrt)                    # cos(theta)_transmission
         Rs = np.abs((self.n_1*np.cos(theta) - self.n_2*sqrt_term)/(self.n_1*np.cos(theta) + self.n_2*sqrt_term))**2
         Rp = np.abs((self.n_1*sqrt_term - self.n_2*np.cos(theta))/(self.n_1*sqrt_term + self.n_2*np.cos(theta)))**2
                                                                 # Determine probability of reflectance
-        if np.random.random() < ((Rs+Rp)/2):                    # if random chance is high enough reflect !
+        if np.random() < ((Rs+Rp)/2):                    # if random chance is high enough reflect !
             return self.normalize(u_r), True                        # return full internal reflection and not absorbed is True
                                                                 # else photon is transmitted to white paint
-        elif np.random.random() < self.pr_absorption:               # does it get absorbed? change probability when you get more data
+        elif np.random() < self.pr_absorption:               # does it get absorbed? change probability when you get more data
             return self.normalize(u_r), False                       # not absorbed is False
         else:                                                   # no it didn't get absorbed!
             theta_new = uniform(-np.pi/2,np.pi/2)            # new theta direction of photon
@@ -242,7 +243,7 @@ class Simulation:
     def particle_path(self, t, phi_range_deg, T1_z, T1_width, T4_z, T4_width, T1_radius, T4_radius, T1_corner, T4_corner, mean_free_path, photons_per_E, prob_scint):
         theta = uniform(0,2*np.pi)                                                     # random theta in circle above T1
         phi = uniform(np.pi-phi_range_deg*np.pi/180/2,np.pi+phi_range_deg*np.pi/180/2) # phi angle pointing in -k given phi range
-        maxdist = np.random.random()*self.particle_gen_area                                   # radius of generation
+        maxdist = np.random()*self.particle_gen_area                                   # radius of generation
         round_const = self.round_to_sig(mean_free_path)
         o = np.float64((maxdist*np.cos(theta), maxdist*np.sin(theta), self.particle_gen_z))   # x, y, z of new particle
         u = np.array((np.cos(theta)*np.sin(phi),np.sin(theta)*np.sin(phi),np.cos(phi)),dtype=np.float64)
@@ -259,7 +260,7 @@ class Simulation:
                 if missed:
                     theta = uniform(0,2*np.pi)                                                 # reset random theta in circle above T1
                     phi = uniform(np.pi-phi_range_deg*np.pi/180/2,np.pi+phi_range_deg*np.pi/180/2) # reset phi angle pointing in -k given phi range
-                    maxdist = np.random.random()*T1_radius/2                                          # reset random point inside half the radius of T1
+                    maxdist = np.random()*T1_radius/2                                          # reset random point inside half the radius of T1
                     round_const = self.round_to_sig(mean_free_path)
                     o = np.float64((maxdist*np.cos(theta), maxdist*np.sin(theta), T1_z+T1_width+2))   # reset x, y, top of T1_z+2
                     u = np.array((np.cos(theta)*np.sin(phi),np.sin(theta)*np.sin(phi),np.cos(phi)),dtype=np.float64) # reset u direction
@@ -283,8 +284,8 @@ class Simulation:
                     t +=  dist/self.c                                              # calculate time in ps passed
                     times.append(t)
                     points.append(points[-1]+dist*u+mean_free_path*u)
-                    phot = np.random.poisson(photons_per_E)
-                    if np.random.random() < prob_scint: photons.append(phot)
+                    phot = np.poisson(photons_per_E)
+                    if np.random() < prob_scint: photons.append(phot)
                     else: photons.append(0)
                     cur_o = points[-1]                                             # current point 
                     next_o = (cur_o+mean_free_path*u).round(round_const)           # next point
@@ -302,8 +303,8 @@ class Simulation:
                     t += mean_free_path/self.c
                     times.append(t)
                     points.append(cur_o+mean_free_path*u)
-                    phot = np.random.poisson(photons_per_E)
-                    if np.random.random() < prob_scint: photons.append(phot)
+                    phot = np.poisson(photons_per_E)
+                    if np.random() < prob_scint: photons.append(phot)
                     else: photons.append(0)
                     cur_o = points[-1]                                             # current point 
                     next_o = (cur_o+mean_free_path*u).round(round_const)           # next point
@@ -314,7 +315,7 @@ class Simulation:
     # @profile(precision=4)
     def scintillator_monte_carlo(self, o, notabsorbed, scint_radius, scint_plane, light_guide_planes, pmt_center, pmt_radius, corner_center, corner_radius, N_max, t, keepdata):
         if keepdata: track_history = np.zeros((N_max+1,7))         # x, y history of Photon
-        endpoint_dist = np.linalg.norm(o-pmt_center)
+        endpoint_dist = np.norm(o-pmt_center)
         theta = uniform(0,2*np.pi)             # first theta direction of photon
         phi = uniform(0,np.pi)                 # first phi   direction of photon
         PMT_hit_condition = False
@@ -326,7 +327,7 @@ class Simulation:
         while (i < N_max) & (not PMT_hit_condition) & (notabsorbed is True):
             ds, PMT_hit_condition = self.distance_solver(u, o, np.array([0,0,scint_plane[0]]),scint_radius, scint_plane, corner_center, corner_radius, pmt_center, pmt_radius)
             x, y, z = o+ds*u
-            total_dist += np.linalg.norm(ds*u[0:2])
+            total_dist += np.norm(ds*u[0:2])
             o = np.array([x, y, np.abs(z) if np.abs(z-scint_plane).any() < 1e-5 else z])
             dt += np.abs(ds)/self.c                        # time taken in ps traveling in direction theta
     #         print(f"step {i}: ds={ds:.2f}cm dt={dt:.2f}ps Absorbed?={not notabsorbed} xyz =({x:.2f},{y:.2f},{z:.2f}) u=({u[0]:.2f},{u[1]:.2f},{u[2]:.2f})")
@@ -345,11 +346,11 @@ class Simulation:
     def photontoElectrons(self, photons):
         e = 0.
         for i in range(int(photons)):
-            if np.random.random()<self.QE: # Main Monte Carlo 
+            if np.random()<self.QE: # Main Monte Carlo 
                 e+=1
         for dynode in range(self.n_dynodes-1):
             delta_voltage = self.V[dynode+1]-self.V[dynode]
-            e += np.random.poisson(e*delta_voltage/self.E_per_electron)
+            e += np.poisson(e*delta_voltage/self.E_per_electron)
         return e
 
     #############################
@@ -1159,7 +1160,7 @@ class plotter:
         fig = plt.figure(figsize=(6,6))
         ax = fig.add_subplot(111,projection='3d')
         self.plot_full_apparatus(ax, scint)
-        for x1,y1,z1,u1,v1,w1,l in zip(tracks[:-1,0],tracks[:-1,1],tracks[:-1,2], tracks[:-1,3], tracks[:-1,4],tracks[:-1,5],np.linalg.norm(tracks[:-1,3:6],ord=2, axis=1)):
+        for x1,y1,z1,u1,v1,w1,l in zip(tracks[:-1,0],tracks[:-1,1],tracks[:-1,2], tracks[:-1,3], tracks[:-1,4],tracks[:-1,5],np.norm(tracks[:-1,3:6],ord=2, axis=1)):
             ax.quiver(x1, y1, z1, u1, v1, w1, length=l*0.5, edgecolor='k', facecolor='black')
         ax.plot(tracks[:,0],tracks[:,1],tracks[:,2], alpha=0.5, color='C1', marker='.')
         ax.text(photon_pos[0],photon_pos[1],photon_pos[2], f'hitPMT1? {hit_PMT == 1}')
