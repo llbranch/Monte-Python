@@ -186,6 +186,9 @@ class Simulation:
                                                                             # if close to z = zero and within PMT circle
             if (temp_o[2] < (plane_z[0]+0.01)) & (((temp_o[0]-pmt_center[0])**2+(temp_o[1]-pmt_center[1])**2) <= pmt_radius**2): 
                 PMT_cond = True
+            # release
+            dcircle = None; dplane_z = None; dist = None; temp_o = None; dplanex = None; dplaney = None; dplanez = None; 
+            dcorner = None;
             return light_guide_dist, PMT_cond
         elif (pmt_center[0] < 0) & (temp_o[0] < 0) & (temp_o[1] > 0) & ((temp_o[0]**2+temp_o[1]**2) >= radius**2-1):
             dplanex = self.distance_plane(u,o,-radius,dim=0)                       # checks distance to -x boundary
@@ -197,8 +200,14 @@ class Simulation:
                                                                             # if close to z = zero and within PMT circle
             if (temp_o[2] < (plane_z[0]+0.01)) & (((temp_o[0]-pmt_center[0])**2+(temp_o[1]-pmt_center[1])**2) <= pmt_radius**2): 
                 PMT_cond = True
+            # release
+            dcircle = None; dplane_z = None; dist = None; temp_o = None; dplanex = None; dplaney = None; dplanez = None; 
+            dcorner = None;
             return light_guide_dist, PMT_cond
         else:
+            # release
+            dcircle = None; dplane_z = None; temp_o = None; dplanex = None; dplaney = None; dplanez = None; 
+            dcorner = None;
             return dist, PMT_cond
 
     # PSEUDOCODE FOR EACH PHOTON INTERACTION WITH BOUNDARY
