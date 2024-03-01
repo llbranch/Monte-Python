@@ -428,39 +428,84 @@ class Simulation:
     def run_worker_T1(self, i, q):
         with h5py.File('temp.hdf5', 'r') as f:
             data = f['T1']
-            hit, travel_time, prop_dist, endpt_dist, prop_time, interactions = self.scint_taskT1(data['points'][i], data['times'][i])
-            data['particleID'][i]
-            q.put([hit, travel_time, prop_dist, endpt_dist, prop_time, interactions, data['particleID'][i]])
-
+            point = data['points'][i]
+            time = data['times'][i]
+            particle_id = data['particleID'][i]
+        # Move the Q out of the scope of the file 
+        hit, travel_time, prop_dist, endpt_dist, prop_time, interactions = self.scint_taskT1(point, time)
+        q.put([hit, travel_time, prop_dist, endpt_dist, prop_time, interactions, particle_id])
+        hit = None; travel_time = None; prop_dist = None; endpt_dist = None; prop_time = None; interactions = None;
+        
     def run_worker_T4(self, i, q):
         with h5py.File('temp.hdf5', 'r') as f:
             data = f['T4']
-            hit, travel_time, prop_dist, endpt_dist, prop_time, interactions = self.scint_taskT4(data['points'][i], data['times'][i])
-            data['particleID'][i]
-            q.put([hit, travel_time, prop_dist, endpt_dist, prop_time, interactions, data['particleID'][i]])
+            point = data['points'][i]
+            time = data['times'][i]
+            particle_id = data['particleID'][i]
+        # Move the Q out of the scope of the file 
+        hit, travel_time, prop_dist, endpt_dist, prop_time, interactions = self.scint_taskT4(point, time)
+        q.put([hit, travel_time, prop_dist, endpt_dist, prop_time, interactions, particle_id])
+        hit = None; travel_time = None; prop_dist = None; endpt_dist = None; prop_time = None; interactions = None;
 
-    def listener(self, q, filename):
+    # def listener(self, q, filename):
+    #     '''listens for messages on the q, writes to file. '''
+    #     f = h5py.File(f'{str(filename)}.hdf5', 'w')
+    #     not_created = True
+    #     while 1:
+    #         new_data = q.get()
+    #         if new_data == 'kill':
+    #             f['data'].resize((f['data'].attrs['n_photons']), axis=0)
+    #             f.close()
+    #             print("Queue", filename, "finished!")
+    #             break
+    #         if not_created:
+    #             ds = f.create_dataset('data', data=new_data, dtype='float64', compression="gzip", chunks=True, shape=(1,7), maxshape=(None,7))
+    #             ds.attrs['n_photons'] = 0
+    #             not_created = False
+    #         else:
+    #             if f['data'].attrs['n_photons'] == f['data'].shape[0]:
+    #                 # if out of space add 10 rows
+    #                 f['data'].resize((f['data'].shape[0] + 10), axis=0)
+    #             # add data regardless and increase counter
+    #             f['data'][f['data'].attrs['n_photons'],:] = new_data
+    #             f['data'].attrs['n_photons'] += 1
+    def listener(self, q, filename, chunk_size=3000):
         '''listens for messages on the q, writes to file. '''
         f = h5py.File(f'{str(filename)}.hdf5', 'w')
         not_created = True
+        chunk = []
         while 1:
             new_data = q.get()
             if new_data == 'kill':
-                f['data'].resize((f['data'].attrs['n_photons']), axis=0)
+                if chunk:
+                    if not_created:
+                        ds = f.create_dataset('data', data=chunk, dtype='float64', compression="gzip", chunks=True, shape=(len(chunk), 7), maxshape=(None, 7))
+                        ds.attrs['n_photons'] = len(chunk)
+                        not_created = False
+                    else:
+                        if f['data'].attrs['n_photons'] + len(chunk) > f['data'].shape[0]:
+                            # Resize the dataset if needed
+                            f['data'].resize((f['data'].attrs['n_photons'] + len(chunk)), axis=0)
+                        f['data'][f['data'].attrs['n_photons']:(f['data'].attrs['n_photons'] + len(chunk)), :] = chunk
+                        f['data'].attrs['n_photons'] += len(chunk)
                 f.close()
                 print("Queue", filename, "finished!")
                 break
-            if not_created:
-                ds = f.create_dataset('data', data=new_data, dtype='float64', compression="gzip", chunks=True, shape=(1,7), maxshape=(None,7))
-                ds.attrs['n_photons'] = 0
-                not_created = False
-            else:
-                if f['data'].attrs['n_photons'] == f['data'].shape[0]:
-                    # if out of space add 10 rows
-                    f['data'].resize((f['data'].shape[0] + 10), axis=0)
-                # add data regardless and increase counter
-                f['data'][f['data'].attrs['n_photons'],:] = new_data
-                f['data'].attrs['n_photons'] += 1
+
+            # Accumulate data in the chunk list until the chunk size is reached
+            chunk.append(new_data)
+            if len(chunk) >= chunk_size:
+                if not_created:
+                    ds = f.create_dataset('data', data=chunk, dtype='float64', compression="gzip", chunks=True, shape=(len(chunk), 7), maxshape=(None, 7))
+                    ds.attrs['n_photons'] = len(chunk)
+                    not_created = False
+                else:
+                    if f['data'].attrs['n_photons'] + len(chunk) > f['data'].shape[0]:
+                        # Resize the dataset if needed
+                        f['data'].resize((f['data'].attrs['n_photons'] + len(chunk)), axis=0)
+                    f['data'][f['data'].attrs['n_photons']:(f['data'].attrs['n_photons'] + len(chunk)), :] = chunk
+                    f['data'].attrs['n_photons'] += len(chunk)
+                chunk = []
 
 
     # @profile(precision=4)
@@ -525,19 +570,23 @@ class Simulation:
             watcher_t4 = pool.apply_async(self.listener, (q4, 't4_data'))
 
             #fire off workers
-            jobs = []
+            jobs_T1 = []
             print("T1 Photon Propagation working...")
             for i in range(T1_count-1):
                 job = pool.apply_async(self.run_worker_T1, (i,q1))
-                jobs.append(job)
-
+                jobs_T1.append(job)
+            jobs_T4 = []
             print("T4 Photon Propagation working...")
             for i in range(T4_count-1):
                 job = pool.apply_async(self.run_worker_T4, (i,q4))
-                jobs.append(job)
+                jobs_T4.append(job)
             
-            # collect once they are done
-            for j in tqdm(jobs):
+            # Collect results for T1
+            for j in tqdm(jobs_T1):
+                j.get()
+
+            # Collect results for T4
+            for j in tqdm(jobs_T4):
                 j.get()
 
             print("Done!")
