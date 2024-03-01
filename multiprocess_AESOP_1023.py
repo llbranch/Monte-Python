@@ -248,12 +248,15 @@ class Simulation:
             theta_new = None; phi_new = None;
             return self.normalize(u_r), True                        # new small change in direction (should be random), and not absorbed is True
 
+    # Predefined unit vectors as NumPy arrays - to prevent recreation of np.arrays
+    unit_z = np.array([0, 0, 1])
+    unit_neg_z = np.array([0, 0, -1])
     # Calculate n vector for all planes and surfaces in apparatus
-    def n_vec_calculate(self, o, scint_plane, light_guide_planes, corner_center, corner_radius):
+    def n_vec_calculate(self, o, scint_plane, light_guide_planes, corner_center, corner_radius=None):
         if o[2] == scint_plane[0]:                                      # bottom of scint
-            return np.array([0,0,+1])
+            return self.unit_z
         elif o[2] == scint_plane[1]:                                    # top of scint
-            return np.array([0,0,-1])
+            return self.unit_neg_z
         elif o[0] == light_guide_planes[0]:                             # y plane of light guide 
             return np.array([0,light_guide_planes[0]/abs(light_guide_planes[0]),0])
         elif o[1] == light_guide_planes[1]:                             # x plane of light guide
