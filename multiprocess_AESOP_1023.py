@@ -230,15 +230,22 @@ class Simulation:
         Rp = np.abs((self.n_1*sqrt_term - self.n_2*np.cos(theta))/(self.n_1*sqrt_term + self.n_2*np.cos(theta)))**2
                                                                 # Determine probability of reflectance
         if np.random() < ((Rs+Rp)/2):                    # if random chance is high enough reflect !
+            # release
+            v = None; theta = None; inside_sqrt = None; sqrt_term = None; Rs = None; Rp = None;             
             return self.normalize(u_r), True                        # return full internal reflection and not absorbed is True
                                                                 # else photon is transmitted to white paint
         elif np.random() < self.pr_absorption:               # does it get absorbed? change probability when you get more data
+            # release
+            v = None; theta = None; inside_sqrt = None; sqrt_term = None; Rs = None; Rp = None;
             return self.normalize(u_r), False                       # not absorbed is False
         else:                                                   # no it didn't get absorbed!
             theta_new = uniform(-np.pi/2,np.pi/2)            # new theta direction of photon
             phi_new = uniform(-np.pi, np.pi)                 # new phi   direction of photon
             new_u = self.normalize(np.array([np.sin(phi_new)*np.cos(theta_new),np.sin(phi_new)*np.sin(theta_new),np.cos(phi_new)]))
             u_r = self.reemission_angle_factor*new_u + n
+            # release
+            v = None; theta = None; inside_sqrt = None; sqrt_term = None; Rs = None; Rp = None;
+            theta_new = None; phi_new = None;
             return self.normalize(u_r), True                        # new small change in direction (should be random), and not absorbed is True
 
     # Calculate n vector for all planes and surfaces in apparatus
