@@ -1287,11 +1287,11 @@ if __name__ == '__main__':
     # RUN SIMULATION 
     #####################
     sim.max_simulated_reflections = 8
-    sim.mean_free_path_scints = 0.001
+    sim.mean_free_path_scints = 0.01
     # sim.mean_free_path_scints = 0.00024 # cm -> 2.4 micrometers
     # sim.num_particles = 4000
     sim.run(1)
-    sim.to_csv(output_both=True)
+    # sim.to_csv(output_both=True)
 
     ###############################################################
     # RUN LTSPICE AND CALCULATE TIME OF FLIGHT --> SAVE TO FILE
