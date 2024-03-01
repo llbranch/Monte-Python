@@ -351,6 +351,9 @@ class Simulation:
                     cur_o = points[-1]                                             # current point 
                     next_o = (cur_o+mean_free_path*u).round(round_const)           # next point
                     inside_scint = (next_o[2] <= (Ttop)) & (next_o[2] >= Tbottom) & (self.scint_condition(next_o, Tradius, num) | self.lg_condition(next_o, Tcorner, num))
+        # Release
+        theta = None; phi = None; maxdist = None; round_const = None; o = None; u = None; cur_o = None; next_o = None; inside_scint = None; missed = None; distT1 = None; distT4 = None; 
+        dist = None; check = None; inside_T1 = None; inside_T4 = None; scint_cond = None; t = None; phot = None; 
         # write to file compressed arrays float 64s
         return np.array(times, dtype=np.float64)[1:], np.array(points, dtype=np.float64)[1:], np.array(photons[1:], dtype=np.float64)
 
